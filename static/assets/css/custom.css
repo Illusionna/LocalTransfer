@@ -1,0 +1,34 @@
+.main-content {
+    position: relative;
+    background-color: #ffffff;
+    z-index: 2;
+    padding-top: 0px;
+    box-shadow: 0px -5px 25px -10px #0000FF;
+}
+.background {
+    position: absolute;
+    top: 0px;
+    left: 0px;
+    width: 100%;
+    height: 100%;
+    z-index: -1;
+}
+@media (max-width: 768px) {
+    form {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+    }
+    input[type="file"] {
+        width: 100%;
+        margin-bottom: 10px;
+    }
+    input[type="submit"] {
+        width: 100%;
+    }
+}
+@media (max-width: 750px) {
+    h1, h3 {
+        flex-direction: column;
+    }
+}
