@@ -18,7 +18,7 @@ A repository for LocalTransfer.
 
 ## 演示视频
 
-<source src="imgs/demo.mp4" type="video/mp4">
+![](./imgs/demo.gif)
 
 ## 使用截图
 
