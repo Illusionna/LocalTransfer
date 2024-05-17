@@ -1,0 +1,47 @@
+\documentclass{article}
+
+\usepackage{ctex}
+
+
+
+\begin{document}
+
+\section{取消终端打印}
+
+flask -- cli.py -- 755 line
+
+werkzeug -- serving.py 828 line -- 1096 line
+
+werkzeug -- serving.py 491 line -- 444 line -- 464 line
+
+
+\section{封装}
+
+python -m venv venv
+
+(conda deactivate) 如果你激活了 conda 环境, 把取消掉.
+
+./venv/Scripts/activate
+
+./venv/Scripts/pip.exe install flask
+
+./venv/Scripts/pip.exe install pyinstaller
+
+./venv/Scripts/python.exe main.py
+
+./venv/Scripts/python.exe encapsulate.py
+
+
+
+\section{瘦身}
+
+2024-05-18 日, 最低要求:
+
+\begin{itemize}
+    \item Python 3.7.0
+    \item upx.exe -9 --force server.exe
+\end{itemize}
+
+
+
+\end{document}
