@@ -15,14 +15,14 @@
         <img src="./images/license-GPLv3-green.svg" alt="LISENCE" data-canonical-src="https://img.shields.io/badge/license-GPLv3-green.svg" style="max-width:100%;">
     </a>
 </p>
-
 <blockquote align="center">
-    Local Transfer 提供开箱即用的 <strong>WebSever.exe</strong> 非代码工具
+    Local Transfer 提供开箱即用的 <strong>WebServer.exe</strong> 非代码工具
     <br>
     Local Transfer 致力于<strong>局域网</strong>文件传输但<strong>不限于此</strong>
     <br>
     Local Transfer 最大的特点：<strong>便捷</strong>、<strong>跨设备</strong>
 </blockquote>
+
 
 <p align="center">
     <a href="#简介">简介</a>
@@ -39,7 +39,7 @@
 3. 介绍
 4. 环境配置
 5. 如何使用？
-	- WebSever.exe
+	- WebServer.exe
 	- Code
 6. 内网穿透
 7. 源码结构树
@@ -72,16 +72,17 @@
 
 “你......🙂”
 
-你是否经常跨设备互传文件？你是否遇到过文件太大传输失败？
+你是否经常跨设备互传文件？是否遇到过文件太大传输失败？
 
 `Local Transfer` 是一个开源免费的微型文件传输服务器工具，支持对服务器的一定操作，它具备便携、中心化以及跨平台特点，适合局域网内**`快速`**共享文件。
 
 ## 4. 环境配置
 
-> 若不想配置代码运行环境依赖，可以直接使用封装好的 [`WebSever.exe`](https://github.com/Illusionna/LocalTransfer/releases) 文件，双击程序或者终端执行。
+> 若不想配置代码运行环境依赖，可以直接使用封装好的 [`WebServer.exe`](https://github.com/Illusionna/LocalTransfer/releases) 文件，双击程序或者终端执行。
 
 <details>
-<summary><b>4.1. WebSever.exe</b></summary>
+<summary><b>4.1. WebServer.exe</b></summary>
+
 
 <p align="center">
     <a href="https://www.microsoft.com" rel="nofollow" target="_blank">
@@ -106,61 +107,138 @@
         <img src="./images/flask-skyblue.svg" alt="flask version" data-canonical-src="https://img.shields.io/badge/flask-2.2.5,%203.0.2,%20latest-skyblue.svg" style="max-width:100%;">
     </a>
 </p>
-源码执行需要 Python 环境以及 flask 库。
+源码执行需要 Python 环境以及 flask 库，但我已经帮你配置好环境依赖，你可以进入 src 源码文件夹，执行类似这样的命令【请使用绝对路径】，立刻运行✌：
+
+```
+>>> python A:/Illusionna/Desktop/LocalTransfer/src/main.py
+```
 
 </details>
 
 ## 5. 如何使用？
 
-一、确保不要被杀毒软件误杀哟 ~
+高级使用见：
 
-二、确保网络防火墙允许 Local Transfer 接入同一个 WiFi 或热点下的局域网 : )
+> [Local Transfer (Illusionna.github.io)](https://Illusionna.github.io/LocalTransfer.github.io)
+>
+> [https://orzzz.net](https://www.orzzz.net)
 
-![Oops?](./images/error.gif)
+以下是基本使用，超级简单。
 
-### 5.1. `WebSever.exe`
+一、确保`不要被`杀毒软件`误杀`哟 ~
 
-- `双击`：下载好 `WebSever.exe` 后，放在你的软件文件夹里，`直接双击`运行程序，当然，你也可以在桌面上创建一个快捷方式。
+<img src="./images/error.gif" alt="Oops?" style="zoom:33%;" />
+
+二、确保网络防火墙允许 Local Transfer 接入`同一个` WiFi 或热点下的`局域网` : )
+
+<img src="./images/win10.png" alt="Oops?" style="zoom:50%;" />
+
+<img src="./images/win11.png" alt="Oops?" style="zoom:50%;" />
+
+### 5.1. `WebServer.exe`
+
+请注意，一共有三种发行版，`WebServer.exe`、`./WebServerFull/WebServer.exe`、`./WebServerLite/WebServer.exe`，作者推荐 `WebServer.exe` 单文件。
+
+- `双击`：下载好 `WebServer.exe` 后，放在你的软件文件夹里，`直接双击`运行程序，当然，可以在桌面上创建一个`快捷方式`，或者加到`环境变量`。
+
+<video width="100%" controls autoplay loop>
+<source src="./images/base.mp4" type="video/mp4"></video>
 
 - `终端`：对于高级选项功能操作，可在 Windows cmd `命令提示符`使用指令查看 help 文档。
 
     ```
-    >>> WebSever.exe  --h
+    >>> WebServer.exe  --h
     ```
 
     - 查看工具版本以及其他信息
     
         ```
-        >>> WebSever.exe  --v
+        >>> WebServer.exe  --v
         ```
         
-    - 修改共享文件夹路径（若文件夹不存在，自动创建，`默认桌面`）
+    - <video width="100%" controls autoplay loop>
+      <source src="./images/VersionHelp.mp4" type="video/mp4"></video>
+        
+    - 修改共享文件夹路径（若文件夹不存在，返回 404，`默认桌面`）
     
         ```
-        >>> WebSever.exe  -share  A:/orzzz/net
+        >>> WebServer.exe  -share  A:/orzzz/net
         ```
     
-    - 修改上传文件夹路径（若文件夹不存在，自动创建，`默认桌面`）
+    - 修改上传文件夹路径（若文件夹不存在，返回 404，`默认桌面`）
     
         ```
-        >>> WebSever.exe  -upload  A:/Illusion/cache
+        >>> WebServer.exe  -upload  A:/Illusion/cache
         ```
-
+    
     - 既修改 IPv4 又修改端口号
     
         ```
-        >>> WebSever  -host  127.0.0.1  -port  12345
+        >>> WebServer  -host  127.0.0.1  -port  12345
         ```
 
+<video width="100%" controls autoplay loop>
+<source src="./images/iPad.mp4" type="video/mp4"></video>
 
 ### 5.2. `Code`
 
+一、零门槛直接上手（使用绝对路径）
+
 ```
->>> pip  install  flask
+cd A:/Illusionna/Desktop/LocalTransfer/src
 ```
 
 ```
->>> python  main.py
+python A:/Illusionna/Desktop/LocalTransfer/src/main.py
+```
+
+<video width="100%" controls autoplay loop>
+<source src="./images/code.mp4" type="video/mp4"></video>
+
+二、从头开始（附带打包 exe 程序）
+
+```
+>>> cd A:/Illusionna/Desktop/LocalTransfer/src
+```
+
+```
+>>> conda create -n LocalTransfer python==3.7.0
+```
+
+```
+>>> conda activate LocalTransfer
+```
+
+```
+>>> python -m venv venv
+```
+
+```
+>>> ./venv/Scripts/activate
+```
+
+```
+>>> conda deactivate
+```
+
+```
+>>> ./venv/Scripts/pip.exe install flask==2.2.5
+```
+
+```
+>>> ./venv/Scripts/python.exe  A:/Illusionna/Desktop/LocalTransfer/src/main.py
+```
+
+```
+>>> CTRL + C
+```
+
+```
+>>> ./venv/Scripts/pip.exe install pyinstaller
+```
+
+```
+>>> ./venv/Scripts/python.exe  ./encapsulate.py
 ```
 
 ## 6. 内网穿透
@@ -169,10 +247,13 @@
 
 发现“paper.pdf”有很明显的错别字，需要远程接入电脑重新排版？
 
-Local Transfer 是局域网文件传输工具，但同时支持互联网公网访问，仅需简单的内网穿透，即可远程连接。例如下载 [cpolar.exe](https://www.cpolar.com) 内网穿透工具，用 cpolar 映射到 WebSever 套接字，打开两个终端分别执行：
+<video width="100%" controls autoplay loop>
+<source src="./images/cpolar.mp4" type="video/mp4"></video>
+
+Local Transfer 是局域网文件传输工具，但同时支持互联网公网访问，仅需简单的内网穿透，即可远程连接。例如下载 [cpolar.exe](https://www.cpolar.com) 内网穿透工具，用 cpolar 映射到 WebServer 套接字，打开两个终端分别执行：
 
 ```
->>> WebSever.exe
+>>> WebServer.exe
 ```
 
 ```
@@ -184,47 +265,89 @@ Local Transfer 是局域网文件传输工具，但同时支持互联网公网�
 <details>
 <summary><b>展开</b></summary>
 
-    |
-    |--model(由于涉及到的表并不是很多,所以没必要将model分开,都放在一起)
-    |       |--models.py(定义模型)
-    |       |--query.py(扩展query)
-    |       |--base.py(基础类定义的地方，这些基础类都是抽象对象，并不能被实例化)
-    |       |--serialization.py(序列化类定义)
-    |       |--error.py(异常类定义)
-    |       |--tool.py(工具,比如分库分表后，需要查找库和表的工具函数)
-    |       |--其他
-    |
-    |--tool(全局工具包)
-    |      |--一些全局工具函数，可以放在此包里，比如发生邮件，发送短信的功能函数，等等
-    |
-    |
-    |
-    |--auth(个人中心,这就涉及到用户登录，等等一些功能,都放在这个包里)
-    |
-    |
-    |
-    |--templates(模板及静态文件存放的地方)
-    |
-    |
-    |
-    |
-    |--API(对外接口)
-    |     |--API设计标准:借助Flask-RESTful设计RESTfulAPI,
-    |
-    |
-    |
-    |
-    |
-    |--统计分析(图形化)
-    |        |--统计用户的信息(来源信息,自己渠道用户活跃数等等)
-    |        |--统计业务情况(细分到各个供应商，各个渠道商，各个国家地区等等,比如订单量，走势,销售额等等)
-    |        |--统计搜索情况(搜索次数最多等等信息)
-    |        |--统计分析的界面是通过后台来展示的
-    |
-    |
-    |
-    |--后台管理
-             |--基本的查看修改功能　　　
+    卷 Windows11 的文件夹 PATH 列表
+    卷序列号为 D44F-BE99
+    C:.
+    
+    │  README.md	(注意说明请阅读我)
+    │  WebServer.exe	(单文件 Local Transfer 服务器工具, 第一发行版)
+    │  
+    ├─dst	(最终结果目标文件夹)
+    │  ├─WebServerFull	(Local Transfer 完整版)
+    │  │  │  api-ms-win-core-console-l1-1-0.dll
+    │  │  │  ..........................
+    │  │  │  base_library.zip
+    │  │  │  VCRUNTIME140.dll
+    │  │  │  WebServer.exe	(打包的完整版服务器工具, 第二发行版)
+    │  │  │      
+    │  │  └─resources	(完整版的 WebServer.exe 依赖静态资源包)
+    │  │      │  commands.json	(自定义指令集)
+    │  │      │  
+    │  │      ├─bin	(Local Transfer 附带的二进制执行程序)
+    │  │      │      GluttonousSnake.exe	(贪吃蛇)
+    │  │      │      HelloWorld.exe	(第一个 C 语言程序)
+    │  │      │      unzip.exe	(解压 zip 指令工具)
+    │  │      │      zip.exe	(打包 zip 指令工具)
+    │  │      │      
+    │  │      ├─static	(第一个 C 语言源码)
+    │  │      │      HelloWorld.c
+    │  │      │      
+    │  │      └─templates	(WebServer 给前端渲染的模板)
+    │  │              couple404.html
+    │  │              ghost404.html
+    │  │              index.html	(首索引网页文件)
+    │  │              screen500.html
+    │  │              unicorn500.html
+    │  │              
+    │  └─WebServerLite	(Local Transfer 精简版, 完整版的简化)
+    │          base_library.zip
+    │          unicodedata.pyd
+    │          WebServer.exe	(精简版的服务器工具, 第三发行版)
+    │          _asyncio.pyd
+    │          _bz2.pyd
+    │		   .............
+    │          _socket.pyd
+    │          
+    ├─images	(README.md 依赖的图像文件夹)
+    │      base.mp4
+    │      bloated1.png
+    │      .......................................
+    │      win11.png
+    │      Windows-x64-brightgreen.svg
+    │          
+    └─src	(Local Transfer 源代码)
+        │  atom.ico	(图标)
+        │  encapsulate.py	(封装可执行程序代码)
+        │  main.py	(程序入口文件)
+        │  README.txt	(请先阅读代码说明文件)
+        │  
+        └─utils	(自定义工具库)
+            │  build.py	(构建 Local Transfer 各种依赖文件)
+            │  HEXADECIMAL_DATA.py	(十六进制数据资源文件)
+            │  parse.py		(解析器文件)
+            │  tool.py		(工具器文件)
+            │  
+            └─site-packages	(Python 第三方库)
+                │  typing_extensions.py
+                ├─bin
+                ├─click
+                ├─colorama
+                ├─flask
+                │  │  cli.py
+                │  │  .........
+                │  └─json
+                │       |   provider.py
+                │       |   tag.py
+                │       |   __init__.py 
+                ├─markupsafe
+                ├─werkzeug
+                │  │  serving.py
+                │  │  .............
+                │  │  __init__.py
+                │          
+                └─zipp
+                     |   py310compat.py
+                     |   __init__.py
 
 </details>
 
@@ -243,6 +366,12 @@ Local Transfer 是局域网文件传输工具，但同时支持互联网公网�
 > https://github.com/tapio/live-server
 >
 > https://flask-autoindex.readthedocs.io
+
+![Oops?](./images/bloated1.png)
+
+![Oops?](./images/bloated2.jpg)
+
+![Oops?](./images/bloated3.png)
 
 ## X. 同步
 
