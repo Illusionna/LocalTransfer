@@ -22,8 +22,6 @@
     <br>
     Local Transfer 最大的特点：<strong>便捷</strong>、<strong>跨设备</strong>
 </blockquote>
-
-
 <p align="center">
     <a href="#简介">简介</a>
     |
@@ -31,6 +29,8 @@
 </p>
 
 ------
+
+> 如果 README.md 里面的 .gif 图看不清楚, 可以去 images 文件夹里找高清 .mp4 教学视频演示。
 
 ## 0. 目录
 
@@ -141,8 +141,8 @@
 
 - `双击`：下载好 `WebServer.exe` 后，放在你的软件文件夹里，`直接双击`运行程序，当然，可以在桌面上创建一个`快捷方式`，或者加到`环境变量`。
 
-<video width="100%" controls autoplay loop>
-<source src="./images/base.mp4" type="video/mp4"></video>
+![Oops](./images/base.gif)
+
 
 - `终端`：对于高级选项功能操作，可在 Windows cmd `命令提示符`使用指令查看 help 文档。
 
@@ -156,9 +156,8 @@
         >>> WebServer.exe  --v
         ```
         
-    - <video width="100%" controls autoplay loop>
-      <source src="./images/VersionHelp.mp4" type="video/mp4"></video>
-        
+    - ![Oops](./images/VersionHelp.gif)
+    
     - 修改共享文件夹路径（若文件夹不存在，返回 404，`默认桌面`）
     
         ```
@@ -177,8 +176,7 @@
         >>> WebServer  -host  127.0.0.1  -port  12345
         ```
 
-<video width="100%" controls autoplay loop>
-<source src="./images/iPad.mp4" type="video/mp4"></video>
+![Oops](./images/iPad.gif)
 
 ### 5.2. `Code`
 
@@ -192,8 +190,7 @@ cd A:/Illusionna/Desktop/LocalTransfer/src
 python A:/Illusionna/Desktop/LocalTransfer/src/main.py
 ```
 
-<video width="100%" controls autoplay loop>
-<source src="./images/code.mp4" type="video/mp4"></video>
+![Oops](./images/code.gif)
 
 二、从头开始（附带打包 exe 程序）
 
@@ -247,8 +244,7 @@ python A:/Illusionna/Desktop/LocalTransfer/src/main.py
 
 发现“paper.pdf”有很明显的错别字，需要远程接入电脑重新排版？
 
-<video width="100%" controls autoplay loop>
-<source src="./images/cpolar.mp4" type="video/mp4"></video>
+![Oops](./images/cpolar.gif)
 
 Local Transfer 是局域网文件传输工具，但同时支持互联网公网访问，仅需简单的内网穿透，即可远程连接。例如下载 [cpolar.exe](https://www.cpolar.com) 内网穿透工具，用 cpolar 映射到 WebServer 套接字，打开两个终端分别执行：
 
