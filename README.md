@@ -60,6 +60,15 @@
 
 ![Upload Demonstration](./images/demo.png)
 
+<video controls>
+    <source src="./images/macOS-demo.mp4" type="video/mp4">
+</video>
+
+<video controls>
+    <source src="./images/Linux-demo.mp4" type="video/mp4">
+</video>
+
+
 ## 3. 介绍
 
 “哥们，快把最新的游戏安装包发我一份，好哥哥，顺便把这周作业也发我。”
