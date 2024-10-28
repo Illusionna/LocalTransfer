@@ -203,13 +203,22 @@ def search():
         )
         for relative_path in iter(Parse.Path(cmd))
     ):
-        subprocess.run(
-            args = f'start powershell.exe -Command "{cmd}"',
-            shell = True,
-            cwd = os.path.normpath(
-                args.SHARE_ROOT + os.sep + urlparse(request.json.get('currentUrl')).path
+        if platform.system() == 'Windows':
+            subprocess.run(
+                args = f'start powershell.exe -Command "{cmd}"',
+                shell = True,
+                cwd = os.path.normpath(
+                    args.SHARE_ROOT + os.sep + urlparse(request.json.get('currentUrl')).path
+                )
             )
-        )
+        else:
+            subprocess.run(
+                args = cmd,
+                shell = True,
+                cwd = os.path.normpath(
+                    args.SHARE_ROOT + os.sep + urlparse(request.json.get('currentUrl')).path
+                )
+            )
         # 等终端子进程执行 1 秒, 此后不过子进程是否执行完成或僵尸, 都响应前端 200 OK.
         time.sleep(1)
         # 清空 LRU 缓存.
