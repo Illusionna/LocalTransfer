@@ -201,7 +201,14 @@ python A:/Illusionna/Desktop/LocalTransfer/src/main.py
 
 ![Oops](./images/code.gif)
 
-二、从头开始（附带打包 exe 程序）
+二、POST 请求 Local Transfer API
+
+```
+# 上传某个文件到服务器.
+>>> curl -X POST -F "./RANDOM=@/Users/illusionna/cat.png" http://192.168.1.103:8888/POST-API
+```
+
+三、从头开始（附带打包 exe 程序）
 
 ```
 >>> cd A:/Illusionna/Desktop/LocalTransfer/src
