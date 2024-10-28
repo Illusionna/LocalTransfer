@@ -204,7 +204,7 @@ def search():
         for relative_path in iter(Parse.Path(cmd))
     ):
         subprocess.run(
-            args = f'start powershell.exe -Command "{cmd}"',
+            args = cmd,
             shell = True,
             cwd = os.path.normpath(
                 args.SHARE_ROOT + os.sep + urlparse(request.json.get('currentUrl')).path
