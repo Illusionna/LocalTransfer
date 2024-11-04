@@ -676,10 +676,14 @@ class Build:
         :param str frozen_dir: 程序冻结路径。
         :param dict instructions: 指令集字典。
         """
+        OS = platform.system()
         ENVIRON_DIRS = list(
             os.path.normpath(path) if os.path.isabs(path) else os.path.normpath(os.path.join(frozen_dir, path)) for path in map(lambda x: next(iter(x.values())), instructions['extension'])
         )
-        os.environ['PATH'] = ';'.join([os.environ['PATH']] + ENVIRON_DIRS)
+        if OS == 'Windows':
+            os.environ['PATH'] = ';'.join([os.environ['PATH']] + ENVIRON_DIRS)
+        else:
+            os.environ['PATH'] = ':'.join([os.environ['PATH']] + ENVIRON_DIRS)
 
 
 
