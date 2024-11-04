@@ -679,7 +679,7 @@ class Build:
         ENVIRON_DIRS = list(
             os.path.normpath(path) if os.path.isabs(path) else os.path.normpath(os.path.join(frozen_dir, path)) for path in map(lambda x: next(iter(x.values())), instructions['extension'])
         )
-        os.environ['PATH'] = ';'.join([os.environ['PATH']] + ENVIRON_DIRS)
+        os.environ['PATH'] = ':'.join([os.environ['PATH']] + ENVIRON_DIRS)
 
 
 
