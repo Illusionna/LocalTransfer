@@ -1,3 +1,5 @@
+> bilibili 教学指南：https://www.bilibili.com/video/BV1MaDuY6EDJ
+
 <h1 align="center">
 	<a href="https://illusionna.github.io/LocalTransfer.github.io" target="_blank">
 	<img src="./images/logo.png" width="25%"/></a>
