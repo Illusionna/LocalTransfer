@@ -1,7 +1,7 @@
 ## 简介
 
 <div style="text-align: center;">
-    <img src="../_images/requests-sidebar.png" style="zoom:100%;" alt="Oops?">
+    <img src="_images/requests-sidebar.png" style="zoom:100%;" alt="Oops?">
 </div>
 
 ## 1.1. 这是什么？
