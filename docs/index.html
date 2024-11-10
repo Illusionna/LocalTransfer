@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="UTF-8">
+        <title>Local Transfer 使用指南</title>
+
+        <!-- 解除其他平台的防盗链 -->
+        <meta name="referrer" content="never">
+
+        <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1" />
+        <meta name="description" content="Description">
+        <meta name="viewport" content="width=device-width, user-scalable=no, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0">
+
+        <link rel="stylesheet" href="//cdn.jsdelivr.net/npm/docsify/themes/vue.css">
+        <link rel="stylesheet" href="//cdn.bootcss.com/sweetalert/1.1.3/sweetalert.min.css" type='text/css' media='all' />
+
+        <style>
+            .to-top {
+                display: none;
+                padding: 10px 20px;
+                margin-right: 10px;
+                color: #fff;
+                border-radius: 10px;
+                background-color: rgb(66, 185, 131);
+            }
+        </style>
+    </head>
+
+    <body background="" style=" background-repeat:no-repeat ;background-size:100% 100%;background-attachment: fixed;">
+        <div id="app">Loading...</div>
+        <a class="to-top">Top</a>
+
+        <script>
+            window.$docsify = {
+                el: '#app',
+                name: '目录',
+                repo: 'https://github.com/Illusionna/LocalTransfer',
+                loadNavbar: true, //开启导航栏
+                coverpage: true,  //开启封面
+                loadSidebar: true,//开启侧边栏
+                auto2top: true,   //切换页面自动回到顶部
+                subMaxLevel: 2,   //目录最大级数
+                maxLevel: 4,      //可配置最大支持渲染的标题层级
+                homepage: '_sidebar/README.md', //设置主页面README.md作为首页
+
+                //添加搜索功能
+                search: {
+                    paths: 'auto',
+                    placeholder: {
+                    '/':'🔍 搜索',
+                    },
+
+                    //如果没有内容，则返回
+                    noData: {
+                    '/':'😒 找不到结果',
+                    },
+
+                    depth: 4,         //搜索标题的最大层级
+                    maxAge: 86400000, // 过期时间，单位毫秒，默认一天
+                },//增加搜索框
+
+                footer: {
+                    copy: 'Copyright &copy; 2023—today by',
+                    auth: '<strong><a href="https://www.orzzz.net" target="_blank">@Illusionna</a></strong> | <span id="busuanzi_value_site_pv"></span><span id="busuanzi_value_site_uv"></span>',
+                    pre: '<hr/>',
+                    style: 'text-align: center;',
+                },
+
+                copyCode: {
+                    buttonText: 'Copy',
+                    errorText: 'Error',
+                    successText: 'OK!'
+                },
+
+                'flexible-alerts': {
+                    style: 'flat'
+                }
+            }
+        </script>
+
+        <script src="//cdn.jsdelivr.net/npm/docsify/lib/docsify.min.js"></script>
+
+        <!-- docsify表情包 -->
+        <script src="//cdn.jsdelivr.net/npm/docsify/lib/plugins/emoji.min.js"></script>
+
+        <!-- 复制代码到剪切板 -->
+        <script src="//cdn.jsdelivr.net/npm/docsify-copy-code"></script>
+
+        <!-- 搜索功能 -->
+        <script src="//cdn.jsdelivr.net/npm/docsify/lib/plugins/search.min.js"></script>
+
+        <!-- C、python、bash、js、css、powershell 等等语法高亮 -->
+        <script src="//cdn.jsdelivr.net/npm/prismjs/components/prism-bash.min.js"></script>
+        <script src="//cdn.jsdelivr.net/npm/prismjs/components/prism-python.min.js"></script>
+        <script src="//cdn.jsdelivr.net/npm/prismjs/components/prism-c.min.js"></script>
+        <script src="//cdn.jsdelivr.net/npm/prismjs/components/prism-java.min.js"></script>
+        <script src="//cdn.jsdelivr.net/npm/prismjs/components/prism-javascript.min.js"></script>
+        <script src="//cdn.jsdelivr.net/npm/prismjs/components/prism-css.min.js"></script>
+        <script src="//cdn.jsdelivr.net/npm/prismjs/components/prism-powershell.min.js"></script>
+        <script src="//cdn.jsdelivr.net/npm/prismjs/components/prism-latex.min.js"></script>
+
+        <!-- CDN files for docsify-katex -->
+        <script src="//cdn.jsdelivr.net/npm/docsify-katex@latest/dist/docsify-katex.js"></script>
+
+        <!-- 文档页脚增强 -->
+        <script src="//cdn.jsdelivr.net/npm/docsify-footer-enh/dist/docsify-footer.min.js"></script>
+
+        <!-- 复制提醒 -->
+        <script src="https://cdn.bootcss.com/sweetalert/1.1.3/sweetalert.min.js"></script>
+        <script>
+            document.body.oncopy = function () {
+                swal("复制成功 🎉", "若要转载或引用请务必保留原文链接，并申明来源。如果你觉得本仓库不错，那就来 GitHub 给个 star 吧 😊", "success");
+            };
+        </script>
+
+        <!-- PWA 离线化 -->
+        <script>
+            if (typeof navigator.serviceWorker !== 'undefined') {
+                navigator.serviceWorker.register('assets/js/sw.js')
+            }
+        </script>
+
+        <!-- 访问量统计 -->
+        <script async src="//busuanzi.ibruce.info/busuanzi/2.3/busuanzi.pure.mini.js"></script>
+
+        <!-- 置顶插件 -->
+        <script src="assets/js/jquery-1.11.3.min.js"></script>
+        <script src="assets/js/jquery.toTop.min.js"></script>
+        <script>
+            $('.to-top').toTop();
+        </script>
+
+        <!-- Markdown 引用样式美化 -->
+        <script src="//cdn.jsdelivr.net/npm/docsify-plugin-flexible-alerts/dist/docsify-plugin-flexible-alerts.min.js"></script>
+
+        <!-- 图片缩放 -->
+        <script src="//cdn.jsdelivr.net/npm/docsify/lib/plugins/zoom-image.js"></script>
+    </body>
+</html>
