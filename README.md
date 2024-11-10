@@ -1,6 +1,8 @@
 > 工具主页：https://illusionna.github.io/LocalTransfer
 >
 > bilibili 教学指南：https://www.bilibili.com/video/BV1MaDuY6EDJ
+>
+> 在线体验【2025-11-11 失效，如有国外代理，建议关闭】：http://124.70.191.21:8888
 
 <h1 align="center">
 	<a href="https://illusionna.github.io/LocalTransfer.github.io" target="_blank">
