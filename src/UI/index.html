@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+        <title>Ollava Browser App</title>
+
+        <link rel="stylesheet" href="/UI/assets/css/global-style.css">
+        <link rel="stylesheet" href="/UI/assets/css/property-dialog.css">
+        <link rel="stylesheet" href="/UI/assets/css/delete-dialog.css">
+        <link rel="stylesheet" href="/UI/assets/css/announcement-board.css">
+        <link rel="stylesheet" href="/UI/assets/css/makedir-dialog.css">
+        <link rel="stylesheet" href="/UI/assets/css/rename-dialog.css">
+        <link rel="stylesheet" href="/UI/assets/css/upload-dialog.css">
+        <link rel="stylesheet" href="/UI/assets/css/std-search-dialog.css">
+
+        <script>
+            // 控制页面顶部目录栏与文件列表之间空隙距离.
+            document.addEventListener('DOMContentLoaded', function() {
+                const directory = document.querySelector('.current-directory');
+                const content = document.querySelector('.file-content');
+                function AdjustContentMargin() {
+                    const directory_height = directory.offsetHeight;
+                    content.style.marginTop = `${directory_height}px`;
+                }
+                AdjustContentMargin();
+                window.addEventListener('resize', AdjustContentMargin);
+                const observer = new MutationObserver(AdjustContentMargin);
+                observer.observe(directory, {
+                    childList: true,
+                    subtree: true,
+                    characterData: true
+                });
+            });
+        </script>
+
+        <script>
+            // 点击更多选项按钮.
+            function ToggleMoreMenu(event) {
+                const more_menu = document.querySelector('.more-menu')
+                if (more_menu.classList.contains('active')) {
+                    if (event.target.closest('.more-item')) {
+                        return;
+                    }
+                    more_menu.classList.remove('active');
+                } else {
+                    more_menu.classList.add('active');
+                }
+            }
+        </script>
+    </head>
+
+    <body>
+        <div class="current-directory"></div>
+
+        <div class="file-content"></div>
+
+        <div class="nav-bar">
+            <div class="nav-item">
+                <img src="/UI/assets/images/select.svg" draggable="false"><span>全选</span>
+            </div>
+            <div class="nav-item">
+                <img src="/UI/assets/images/property.svg" draggable="false"><span>属性</span>
+            </div>
+            <div class="nav-item">
+                <img src="/UI/assets/images/announcement.svg" draggable="false"><span>公告</span>
+            </div>
+            <div class="nav-item">
+                <img src="/UI/assets/images/upload.svg" draggable="false"><span>上传</span>
+            </div>
+            <div class="nav-item">
+                <img src="/UI/assets/images/search.svg" draggable="false"><span>搜索</span>
+            </div>
+            <div class="nav-item">
+                <img src="/UI/assets/images/delete.svg" draggable="false"><span>删除</span>
+            </div>
+            <div class="nav-item" onclick="ToggleMoreMenu()">
+                <img src="/UI/assets/images/MORE.svg" draggable="false"><span>更多</span>
+            </div>
+        </div>
+
+        <div class="more-menu" onclick="ToggleMoreMenu(event)">
+            <div class="more-item">
+                <img src="/UI/assets/images/download.svg" draggable="false"><span>下载</span>
+            </div>
+            <div class="more-item">
+                <img src="/UI/assets/images/create.svg" draggable="false"><span>新建</span>
+            </div>
+            <div class="more-item">
+                <img id="paste" src="/UI/assets/images/copy.svg" draggable="false"><span>复制</span>
+            </div>
+            <div class="more-item">
+                <img id="place" src="/UI/assets/images/move.svg" draggable="false"><span>移动</span>
+            </div>
+            <div class="more-item">
+                <img src="/UI/assets/images/analyze.svg" draggable="false"><span style="color: #ccc;">解析</span>
+            </div>
+            <div class="more-item">
+                <img src="/UI/assets/images/rename.svg" draggable="false"><span>改名</span>
+            </div>
+            <div class="more-item">
+                <img src="/UI/assets/images/terminal.svg" draggable="false"><span style="color: #ccc;">终端</span>
+            </div>
+            <div class="more-item">
+                <img src="/UI/assets/images/about.svg" draggable="false"><span>关于</span>
+            </div>
+        </div>
+
+        <div class="property-dialog"></div>
+
+        <div class="delete-dialog"></div>
+
+        <div class="announcement-board"></div>
+
+        <div class="makedir-dialog"></div>
+
+        <div class="rename-dialog"></div>
+
+        <div class="upload-dialog"></div>
+
+        <div class="std-search-dialog"></div>
+
+    </body>
+
+    <script src="/UI/assets/js/display-file-list.js"></script>
+    <script src="/UI/assets/js/select-all-checkbox.js"></script>
+    <script src="/UI/assets/js/view-file-property.js"></script>
+    <script src="/UI/assets/js/delete-file.js"></script>
+    <script src="/UI/assets/js/api-docs.js"></script>
+    <script src="/UI/assets/js/batch-download.js"></script>
+    <script src="/UI/assets/js/announcement-board.js"></script>
+    <script src="/UI/assets/js/make-directory.js"></script>
+    <script src="/UI/assets/js/move-file.js"></script>
+    <script src="/UI/assets/js/rename-file.js"></script>
+    <script src="/UI/assets/js/copy-file.js"></script>
+    <script src="/UI/assets/js/upload-file.js"></script>
+    <script src="/UI/assets/js/search-file.js"></script>
+
+</html>
