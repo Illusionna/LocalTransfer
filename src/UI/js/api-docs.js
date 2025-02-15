@@ -1,0 +1,1 @@
+document.querySelector('.more-item img[src="/UI/assets/images/about.svg"]').parentElement.addEventListener('click', () => {window.open("/docs/", "_blank");});
