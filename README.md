@@ -1,3 +1,12 @@
+【注意】从 v5 版以后，先前的四个版本教程说明均失效, 如有需要可查找 releases 历史记录.
+
+【弃用】该仓库已无精力维护, 可查看最新相关工作: https://github.com/Illusionna/Ollava
+
+![Oops](./images/ollava-browser-app.png)
+
+------------------------------------------------------------------------------------------
+------------------------------------------------------------------------------------------
+
 > 工具主页：https://illusionna.github.io/LocalTransfer
 >
 > bilibili 教学指南：https://www.bilibili.com/video/BV1MaDuY6EDJ
