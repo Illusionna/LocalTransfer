@@ -2,6 +2,8 @@
 
 【弃用】该仓库已无精力维护, 可查看最新相关工作: https://github.com/Illusionna/Ollava
 
+Local Transfer v5 (webserver-v5.exe) 使用截图如下:
+
 ![Oops](./images/ollava-browser-app.png)
 
 ------------------------------------------------------------------------------------------
