@@ -1,0 +1,190 @@
+@font-face {
+    font-family: 'en';
+    src: url('/UI/assets/fonts/en.ttf');
+}
+@font-face {
+    font-family: 'zh';
+    src: url('/UI/assets/fonts/zh.ttf');
+}
+
+body {
+    /* 先加载 en 英文字体, 若找不到, 再加载 zh 中文字体, 以此类推. */
+    font-family: 'en', 'zh', 'Times New Roman', sans-serif;
+    font-weight: bold;
+    padding-bottom: 80px;
+    margin: 0;
+    /* 禁止网页复制拖拽. */
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    -khtml-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+}
+img {
+    max-width: 100%;
+    max-height: 100%;
+    width: auto;
+    height: auto;
+}
+button {
+    font-family: 'en', 'zh', 'Times New Roman', sans-serif;
+    font-weight: bold;
+}
+
+.current-directory {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    padding: 10px;
+    background-image: linear-gradient(to right, #434343 0%, black 100%);
+    margin: 0;
+    z-index: 1;
+    font-size: 20px;
+    backdrop-filter: blur(5px);
+    color: #ffffff;
+    word-wrap: break-word;
+    white-space: normal;
+    line-height: 1.5;
+    height: auto;
+    overflow-y: auto;
+    box-sizing: border-box;
+}
+.current-directory-segment {
+    cursor: pointer;
+    color: rgb(255, 240, 145);
+}
+.current-directory-segment:hover {
+    text-decoration: underline;
+}
+
+.file-content {
+    padding: 20px;
+    position: relative;
+    top: 0;
+}
+.file-item {
+    display: flex;
+    min-height: 20px;
+    height: auto;
+    align-items: flex-start;
+    background-image: linear-gradient(-225deg, #E3FDF5 0%, #FFE6FA 100%);
+    padding: 10px;
+    margin-bottom: 10px;
+    border-radius: 10px;
+    box-shadow: rgba(150, 165, 170, 0.75) 0px 5px 10px;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+.file-item input[type="checkbox"] {
+    margin-top: 5px;
+    width: 20px;
+    height: 20px;
+    margin-right: 10px;
+    cursor: crosshair;
+}
+.file-item .file-icon {
+    margin-top: 0px;
+    margin-right: 5px;
+}
+.file-item > div:last-child {
+    flex: 1;
+    word-break: break-word;
+    min-width: 0;
+    padding: 3px 0;
+}
+.file-item > div.file-name {
+    flex: 1;
+    word-break: break-word;
+    min-width: 0;
+    padding: 3px 0;
+}
+.file-item > div.file-size {
+    padding: 3px 0;
+    max-width: 25%;
+    text-align: right;
+    color: #666;
+    font-size: 1em;
+}
+.file-icon {
+    width: 30px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.nav-bar {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background-color: rgba(255, 255, 255, 0.9);
+    padding: 15px;
+    display: flex;
+    justify-content: space-around;
+    box-shadow: 0 -5px 10px rgba(0, 0, 0, 0.25);
+    backdrop-filter: blur(10px);
+    z-index: 2;
+}
+.nav-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+.nav-item:hover {
+    transform: translateY(-5px);
+}
+.nav-item img {
+    width: 25px;
+    height: 25px;
+    margin-bottom: 5px;
+}
+.nav-item span {
+    font-size: 12px;
+    color: #333;
+    user-select: none;
+}
+
+.more-menu {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(255, 255, 255, 0.9);
+    padding: 70px;
+    display: flex;
+    justify-content: space-evenly;
+    flex-direction: column;
+    box-shadow: -5px 0 10px rgba(0, 0, 0, 0.25);
+    backdrop-filter: blur(10px);
+    transform: translateX(100%);
+    transition: transform 0.3s ease;
+    z-index: 2;
+}
+.more-menu.active {
+    transform: translateX(0);
+}
+.more-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+.more-item:hover {
+    transform: translateX(-5px);
+}
+.more-item img {
+    width: 25px;
+    height: 25px;
+    margin-bottom: 5px;
+}
+.more-item span {
+    font-size: 12px;
+    color: #333;
+    user-select: none;
+}
