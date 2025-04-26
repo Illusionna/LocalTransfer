@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8"/>
+        <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+        <title>Go Transfer</title>
+        <link rel="stylesheet" href="./src/style.css"/>
+    </head>
+
+    <body>
+        <div class="container">
+            <!-- 顶部控制区 -->
+            <div class="header-controls stacked-card-container">
+                <div class="server-control">
+                    <div class="status-indicator">
+                        <div id="statusDot" class="status-dot"></div>
+                        <span id="statusText">服务器运行中</span>
+                    </div>
+                    <button id="toggleServer" class="server-button">
+                        停止服务器
+                    </button>
+                </div>
+                
+                <div class="language-toggle">
+                    <span id="langZh" class="lang-label">中文</span>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="langToggle">
+                        <span class="slider"></span>
+                    </label>
+                    <span id="langEn" class="lang-label">English</span>
+                </div>
+            </div>
+    
+            <!-- 主内容区 -->
+            <div class="main-content stacked-card-container">
+                <h2 class="section-title">服务器配置</h2>
+                
+                <div class="form-grid">
+                    <div class="form-group stacked-card-item">
+                        <div class="form-stack-wrapper">
+                            <label id="ipLabel" for="ipAddress">IP 地址</label>
+                            <input type="text" id="ipAddress" placeholder="127.0.0.1">
+                        </div>
+                    </div>
+    
+                    <div class="form-group stacked-card-item">
+                        <div class="form-stack-wrapper">
+                            <label id="portLabel" for="port">端口</label>
+                            <input type="number" id="port" placeholder="8888" min="1" max="65535">
+                        </div>
+                    </div>
+    
+                    <div class="form-group stacked-card-item">
+                        <div class="form-stack-wrapper">
+                            <label id="shareFolderLabel" for="shareFolder">共享文件夹路径</label>
+                            <input type="text" id="shareFolder" placeholder="C:\Users\Zolio Marling\Desktop">
+                        </div>
+                    </div>
+    
+                    <div class="form-group stacked-card-item">
+                        <div class="form-stack-wrapper">
+                            <label id="savePathLabel" for="savePath">保存路径</label>
+                            <input type="text" id="savePath" placeholder="A:/Illusionna/Downloads">
+                        </div>
+                    </div>
+    
+                    <div class="form-group stacked-card-item">
+                        <div class="form-stack-wrapper">
+                            <label id="passwordLabel" for="password">登录密码</label>
+                            <input type="text" id="password" placeholder="可选 (Optional)">
+                        </div>
+                    </div>
+
+                    <div class="form-group stacked-card-item">
+                        <div class="form-stack-wrapper">
+                            <label id="maxSizeLabel" for="maxSize">限制上传文件最大尺寸</label>
+                            <input type="text" id="maxSize" placeholder="1.2 GB">
+                        </div>
+                    </div>
+                </div>
+                
+                <h2 class="section-title">功能设置</h2>
+                
+                <div class="toggle-options">
+                    <div class="form-grid">
+                        <div class="toggle-option stacked-card-item stacked-card-container">
+                            <span id="enableUploadLabel" class="toggle-label">上传功能</span>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="enableUpload" checked>
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+
+                        <div class="toggle-option stacked-card-item stacked-card-container">
+                            <span id="enableDeleteLabel" class="toggle-label">删除功能</span>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="enableDelete" checked>
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                        
+                        <div class="toggle-option stacked-card-item stacked-card-container">
+                            <span id="enableRenameLabel" class="toggle-label">重命名功能</span>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="enableRename" checked>
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+
+                        <div class="toggle-option stacked-card-item stacked-card-container">
+                            <span id="enableSearchLabel" class="toggle-label">搜索功能</span>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="enableSearch" checked>
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+
+                        <div class="toggle-option stacked-card-item stacked-card-container">
+                            <span id="enableBoardLabel" class="toggle-label">公告功能</span>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="enableBoard" checked>
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+
+                        <div class="toggle-option stacked-card-item stacked-card-container">
+                            <span id="enableMkdirLabel" class="toggle-label">新建文件夹功能</span>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="enableMkdir" checked>
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+
+                        <div class="toggle-option stacked-card-item stacked-card-container">
+                            <span id="enableCopyLabel" class="toggle-label">复制粘贴功能</span>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="enableCopy" checked>
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+
+                        <div class="toggle-option stacked-card-item stacked-card-container">
+                            <span id="enableMoveLabel" class="toggle-label">剪切移动功能</span>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="enableMove" checked>
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="action-buttons">
+                    <button id="saveSettings" class="save-btn">保存设置</button>
+                </div>
+            </div>
+        </div>
+    
+        <div id="notification" class="notification">
+            <p id="notificationMessage"></p>
+        </div>
+
+        <script src="./src/main.js" type="module"></script>
+    </body>
+</html>

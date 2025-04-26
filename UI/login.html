@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Go Transfer Login</title>
+        <style>
+            body {
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                min-height: 100vh;
+                margin: 0;
+            }
+            .login-container {
+                text-align: center;
+            }
+            input[type="password"], button {
+                font-family: 'Courier New', Courier, monospace;
+                font-weight: bold;
+            }
+        </style>
+    </head>
+
+    <body>
+        <div class="login-container">
+            <form action="/login/" method="post">
+                <input type="password" name="password" placeholder=">>> password?">
+                <button type="submit">login</button>
+            </form>
+        </div>
+    </body>
+</html>

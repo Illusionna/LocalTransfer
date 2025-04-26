@@ -1,0 +1,719 @@
+* {
+    user-select: none;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+}
+::-webkit-scrollbar {
+    width: 10px;
+}
+::-webkit-scrollbar-track {
+    background: #d4cdbd;
+}
+::-webkit-scrollbar-thumb {
+    background: #6b705c;
+    border-radius: 5px;
+}
+::selection {
+    color: #fff;
+    background: #088;
+}
+
+
+
+
+
+
+
+
+:root {
+    --primary-color: #4361ee;
+    --primary-hover: #3a56e8;
+    --primary-light: #647df7;
+    --primary-dark: #2b48ce;
+    --success-color: #10b981;
+    --success-hover: #059669;
+    --danger-color: #ef4444;
+    --danger-hover: #dc2626;
+    --warning-color: #f59e0b;
+    --text-on-primary: #ffffff;
+    --text-color: #1f2937;
+    --text-light: #6b7280;
+    --background-color: #f7f9fc;
+    --surface-color: #ffffff;
+    --surface-hover: #f9fafb;
+    --border-color: #e5e7eb;
+    --border-radius: 8px;
+    --box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.08), 0 2px 4px -2px rgba(0, 0, 0, 0.04);
+    --box-shadow-hover: 0 8px 12px -1px rgba(0, 0, 0, 0.08), 0 3px 6px -2px rgba(0, 0, 0, 0.05);
+    --transition: all 0.25s cubic-bezier(0.25, 0.8, 0.25, 1);
+    --cubic-bezier: cubic-bezier(0.4, 0, 0.2, 1);
+    
+    /* 修改堆叠卡片效果，降低晃动感 */
+    --card-offset: 3px;
+    --card-rotation: 0.5deg;
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: 'Segoe UI', 'Roboto', system-ui, -apple-system, sans-serif;
+}
+
+body {
+    background-color: var(--background-color);
+    color: var(--text-color);
+    line-height: 1.6;
+    padding: 20px;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    background-image: linear-gradient(135deg, rgba(67, 97, 238, 0.02) 0%, rgba(16, 185, 129, 0.02) 100%);
+    transition: var(--transition);
+    perspective: 1000px;
+}
+
+/* 修改卡片堆叠容器样式 - 降低动画强度 */
+.stacked-card-container {
+    position: relative;
+    transform-style: preserve-3d;
+    transition: var(--transition);
+    will-change: transform; /* 优化性能 */
+}
+
+/* 修改卡片堆叠下层效果 - 降低透明度和偏移量 */
+.stacked-card-container::before,
+.stacked-card-container::after {
+    content: '';
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    border-radius: var(--border-radius);
+    background-color: white;
+    transition: var(--transition);
+    box-shadow: var(--box-shadow);
+    opacity: 0.6;
+    pointer-events: none;
+}
+
+.stacked-card-container::before {
+    top: var(--card-offset);
+    left: calc(var(--card-offset) * -0.25);
+    transform: rotate(calc(var(--card-rotation) * -0.5));
+    z-index: -1;
+    background-color: #fafbfc;
+}
+
+.stacked-card-container::after {
+    top: calc(var(--card-offset) * 0.5);
+    left: var(--card-offset);
+    transform: rotate(calc(var(--card-rotation) * 0.5));
+    z-index: -2;
+    background-color: #f5f7fa;
+}
+
+/* 减轻鼠标悬停时的动画效果 */
+.stacked-card-container:hover {
+    transform: translateY(-2px);
+}
+
+.stacked-card-container:hover::before {
+    transform: rotate(calc(var(--card-rotation) * -0.5)) translateY(2px);
+}
+
+.stacked-card-container:hover::after {
+    transform: rotate(calc(var(--card-rotation) * 0.5)) translateY(4px);
+}
+
+/* 修改滚动条样式 */
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+
+::-webkit-scrollbar-track {
+    background: #f5f5f5;
+    border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #d4d4d8;
+    border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #a8a8a8;
+}
+
+.container {
+    width: 100%;
+    max-width: 900px;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    gap: 25px;
+    transform-style: preserve-3d;
+}
+
+/* 修改表单块动画 - 降低强度 */
+.form-group {
+    transform-style: preserve-3d;
+    transition: transform 0.2s ease;
+}
+
+.form-stack-wrapper {
+    position: relative;
+    transform-style: preserve-3d;
+    transition: var(--transition);
+}
+
+.form-stack-wrapper:hover {
+    transform: translateY(-1px);
+}
+
+/* 顶部控制区 */
+.header-controls {
+    background-color: var(--primary-color);
+    color: var(--text-on-primary);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 18px 25px;
+    border-radius: var(--border-radius);
+    box-shadow: var(--box-shadow);
+    background-image: linear-gradient(135deg, var(--primary-color) 0%, var(--primary-hover) 100%);
+    position: relative;
+    overflow: hidden;
+    animation: slideFromTop 0.5s var(--cubic-bezier);
+}
+
+/* 减轻顶部控制区动画强度 */
+@keyframes slideFromTop {
+    from {
+        transform: translateY(-25px);
+        opacity: 0;
+    }
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+.header-controls::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    left: -50%;
+    width: 200%;
+    height: 200%;
+    background: radial-gradient(rgba(255, 255, 255, 0.06), transparent 70%);
+    opacity: 0.7;
+    transform: rotate(30deg);
+}
+
+.server-control {
+    display: flex;
+    align-items: center;
+    position: relative;
+    z-index: 1;
+}
+
+.status-indicator {
+    display: flex;
+    align-items: center;
+    margin-right: 20px;
+    background: rgba(0, 0, 0, 0.08);
+    padding: 8px 15px;
+    border-radius: 50px;
+    backdrop-filter: blur(5px);
+}
+
+.status-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background-color: var(--danger-color);
+    margin-right: 10px;
+    position: relative;
+    transition: var(--transition);
+}
+
+/* 修改脉冲动画 - 降低强度 */
+.status-dot.active {
+    background-color: var(--success-color);
+    box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.2);
+    animation: pulse 2.5s infinite;
+}
+
+@keyframes pulse {
+    0% {
+        box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.5);
+    }
+    70% {
+        box-shadow: 0 0 0 4px rgba(16, 185, 129, 0);
+    }
+    100% {
+        box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
+    }
+}
+
+.server-button {
+    background-color: var(--success-color);
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 6px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: var(--transition);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 140px;
+    position: relative;
+    overflow: hidden;
+    font-size: 1rem;
+}
+
+.server-button::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent);
+    transition: 0.5s;
+}
+
+.server-button:hover::before {
+    left: 100%;
+}
+
+.server-button.running {
+    background-color: var(--danger-color);
+}
+
+.server-button:hover {
+    filter: brightness(1.05);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+}
+
+.server-button:active {
+    transform: translateY(0);
+    filter: brightness(0.95);
+}
+
+/* 语言切换 */
+.language-toggle {
+    display: flex;
+    align-items: center;
+    background: rgba(0, 0, 0, 0.08);
+    padding: 5px 15px;
+    border-radius: 50px;
+    position: relative;
+    z-index: 1;
+    backdrop-filter: blur(5px);
+}
+
+.toggle-switch {
+    position: relative;
+    display: inline-block;
+    width: 50px;
+    height: 26px;
+    margin: 0 8px;
+}
+
+.toggle-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(255, 255, 255, 0.3);
+    transition: .3s;
+    border-radius: 30px;
+    box-shadow: inset 0 0 2px rgba(0, 0, 0, 0.2);
+}
+
+.slider:before {
+    position: absolute;
+    content: "";
+    height: 20px;
+    width: 20px;
+    left: 3px;
+    bottom: 3px;
+    background-color: white;
+    transition: .3s;
+    border-radius: 50%;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+input:checked + .slider {
+    background-color: rgba(255, 255, 255, 0.7);
+}
+
+input:checked + .slider:before {
+    transform: translateX(24px);
+}
+
+.lang-label {
+    color: var(--text-on-primary);
+    font-weight: 500;
+    transition: var(--transition);
+    opacity: 0.9;
+    font-size: 0.9rem;
+}
+
+input:checked ~ #langZh {
+    opacity: 0.6;
+}
+
+input:not(:checked) ~ #langEn {
+    opacity: 0.6;
+}
+
+/* 主内容区 */
+.main-content {
+    background-color: var(--surface-color);
+    border-radius: var(--border-radius);
+    box-shadow: var(--box-shadow);
+    padding: 25px;
+    flex-grow: 1;
+    transition: var(--transition);
+    animation: slideFromBottom 0.6s var(--cubic-bezier);
+    transform-style: preserve-3d;
+}
+
+/* 降低主内容区动画强度 */
+@keyframes slideFromBottom {
+    from {
+        transform: translateY(30px);
+        opacity: 0;
+    }
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+.main-content:hover {
+    box-shadow: var(--box-shadow-hover);
+}
+
+.form-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    transform-style: preserve-3d;
+}
+
+.section-title {
+    margin-bottom: 20px;
+    color: var(--primary-color);
+    font-size: 1.1rem;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border-color);
+    position: relative;
+    overflow: hidden;
+}
+
+.section-title::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 0;
+    height: 2px;
+    background-color: var(--primary-color);
+    transition: width 0.5s ease;
+}
+
+.section-title:hover::after {
+    width: 100%;
+}
+
+.section-title:before {
+    content: '';
+    display: inline-block;
+    width: 3px;
+    height: 16px;
+    background-color: var(--primary-color);
+    margin-right: 8px;
+    border-radius: 2px;
+}
+
+.form-group {
+    margin-bottom: 16px;
+    position: relative;
+    transition: transform 0.2s;
+}
+
+label {
+    display: block;
+    margin-bottom: 6px;
+    font-weight: 500;
+    color: var(--text-color);
+    font-size: 0.9rem;
+}
+
+input[type="text"],
+input[type="number"],
+input[type="password"] {
+    width: 100%;
+    padding: 10px 14px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    font-size: 0.95rem;
+    transition: var(--transition);
+    background-color: #f9fafb;
+}
+
+input[type="text"]:focus,
+input[type="number"]:focus,
+input[type="password"]:focus {
+    border-color: var(--primary-color);
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(67, 97, 238, 0.15);
+    background-color: white;
+}
+
+/* 开关样式 */
+.toggle-options {
+    margin-top: 25px;
+    transform-style: preserve-3d;
+}
+
+.toggle-options .form-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+}
+
+.toggle-option {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 18px;
+    background-color: var(--surface-hover);
+    border-radius: 6px;
+    margin-bottom: 0;
+    transition: var(--transition);
+    border: 1px solid var(--border-color);
+    position: relative;
+    transform-style: preserve-3d;
+}
+
+.toggle-label {
+    font-weight: 500;
+    font-size: 0.95rem;
+}
+
+.toggle-option .toggle-switch {
+    margin: 0;
+}
+
+.toggle-option .slider {
+    background-color: #d1d5db;
+}
+
+.toggle-option .slider:before {
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+}
+
+.toggle-option input:checked + .slider {
+    background-color: var(--success-color);
+}
+
+/* 保存按钮 */
+.action-buttons {
+    display: flex;
+    justify-content: center;
+    margin-top: 35px;
+    position: relative;
+    z-index: 10;
+}
+
+.save-btn {
+    background-color: var(--primary-color);
+    color: white;
+    border: none;
+    padding: 11px 26px;
+    border-radius: 6px;
+    font-size: 0.95rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: var(--transition);
+    min-width: 180px;
+    position: relative;
+    overflow: hidden;
+}
+
+.save-btn::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 200%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+    transform: skewX(-15deg);
+    animation: shimmer 3s infinite;
+    opacity: 0;
+    transition: opacity 0.3s;
+}
+
+.save-btn:hover {
+    background-color: var(--primary-hover);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 10px rgba(67, 97, 238, 0.15);
+}
+
+.save-btn:hover::after {
+    opacity: 1;
+}
+
+.save-btn:active {
+    transform: translateY(-1px);
+}
+
+@keyframes shimmer {
+    0% {
+        left: -100%;
+    }
+    100% {
+        left: 100%;
+    }
+}
+
+/* 通知样式 - 修复延迟问题 */
+.notification {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%) scale(0.95);
+    opacity: 0;
+    padding: 22px 26px;
+    background: white;
+    border-radius: 10px;
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12);
+    transition: all 0.3s var(--cubic-bezier);
+    z-index: 1000;
+    text-align: center;
+    min-width: 280px;
+    pointer-events: none;
+    max-width: 90%;
+}
+
+.notification.show {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 1;
+}
+
+.notification.success {
+    border-top: 4px solid var(--success-color);
+}
+
+.notification.success::before {
+    content: '✓';
+    position: absolute;
+    top: -18px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--success-color);
+    color: white;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    font-weight: bold;
+}
+
+.notification.error {
+    border-top: 4px solid var(--danger-color);
+}
+
+.notification.error::before {
+    content: '×';
+    position: absolute;
+    top: -18px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--danger-color);
+    color: white;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    font-weight: bold;
+}
+
+#notificationMessage {
+    margin-top: 12px;
+    font-size: 1rem;
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+    .header-controls {
+        flex-direction: column;
+        gap: 15px;
+    }
+    
+    .form-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .toggle-options .form-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .server-control {
+        width: 100%;
+        justify-content: space-between;
+    }
+}
+
+/* 交互动画 - 降低强度 */
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(5px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.stacked-card-item {
+    animation: fadeIn 0.4s ease-out forwards;
+    opacity: 0;
+}
+
+.form-group:nth-child(1) { animation-delay: 0.08s; }
+.form-group:nth-child(2) { animation-delay: 0.16s; }
+.form-group:nth-child(3) { animation-delay: 0.24s; }
+.form-group:nth-child(4) { animation-delay: 0.32s; }
+.form-group:nth-child(5) { animation-delay: 0.40s; }
+.toggle-option:nth-child(1) { animation-delay: 0.48s; }
+.toggle-option:nth-child(2) { animation-delay: 0.56s; }
