@@ -28,7 +28,7 @@ Go Local Transfer 是一个 HTTP 文件服务器，具备图形化界面，支�
 > 双击 GoTransfer 软件
 
 <div align=center>
-    <img src="./images/gui.png" width="75%" height="75%">
+    <img src="./images/GUI.png" width="75%" height="75%">
 </div>
 
 > 终端执行 goer 程序
