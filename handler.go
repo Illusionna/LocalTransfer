@@ -316,7 +316,7 @@ func BatchDownloadHandler(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/zip")
 		w.Header().Set("Content-Disposition", "attachment; filename=archive.zip")
 		w.Header().Set("Content-Length", fmt.Sprintf("%d", buffer.Len()))
-		if _, err := buffer.WriteTo(w); err == nil {
+		if _, err := buffer.WriteTo(w); err != nil {
 			http.Error(w, "[* HTTP 500]: fail to archive the compressed zip file.", http.StatusInternalServerError)
 			return
 		}
