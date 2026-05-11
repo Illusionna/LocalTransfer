@@ -134,7 +134,7 @@ func main() {
 然后在终端执行指令即可构建 CLI 命令行工具。
 
 ```
-go build -o goer.exe -ldflags="-s -w" cli.go types.go handler.go utils.go
+go build -o goer.exe -ldflags="-s -w" -trimpath cli.go types.go handler.go utils.go
 ```
 
 ## 趋势
