@@ -1,0 +1,15 @@
+.{
+    .name = .ziger,
+    .version = "6.0.0",
+    .fingerprint = 0xd877e5ad985d330c,
+    .minimum_zig_version = "0.16.0",
+    .dependencies = .{
+        .httpz = .{ .path = "src/packages/httpz" },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+        "UI",
+    },
+}

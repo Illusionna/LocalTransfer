@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Ziger API 文档</title>
+        <style>
+            :root {
+                color-scheme: light dark;
+                --background: #f5f7fb;
+                --surface: #ffffff;
+                --surface-soft: #f0f3f8;
+                --text: #172033;
+                --muted: #667085;
+                --border: #d9dfeb;
+                --primary: #2563eb;
+                --get: #087f5b;
+                --post: #7c3aed;
+                --code: #111827;
+                --code-text: #e5e7eb;
+            }
+
+            * {
+                box-sizing: border-box;
+            }
+
+            html {
+                scroll-behavior: smooth;
+            }
+
+            body {
+                margin: 0;
+                color: var(--text);
+                background: var(--background);
+                font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+                line-height: 1.65;
+            }
+
+            a {
+                color: var(--primary);
+                text-decoration: none;
+            }
+
+            a:hover {
+                text-decoration: underline;
+            }
+
+            header {
+                padding: 3.5rem max(1.5rem, calc((100vw - 1180px) / 2));
+                color: #ffffff;
+                background: linear-gradient(135deg, #111827, #1d4ed8);
+            }
+
+            header h1 {
+                margin: 0 0 0.75rem;
+                font-size: clamp(2rem, 4vw, 3.25rem);
+            }
+
+            header p {
+                max-width: 760px;
+                margin: 0;
+                color: #dbeafe;
+            }
+
+            .meta {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 0.75rem;
+                margin-top: 1.5rem;
+            }
+
+            .meta span {
+                padding: 0.35rem 0.75rem;
+                border: 1px solid rgba(255, 255, 255, 0.3);
+                border-radius: 999px;
+                background: rgba(255, 255, 255, 0.08);
+            }
+
+            .layout {
+                display: grid;
+                grid-template-columns: 250px minmax(0, 1fr);
+                gap: 2rem;
+                width: min(1180px, calc(100% - 3rem));
+                margin: 2rem auto 4rem;
+            }
+
+            nav {
+                position: sticky;
+                top: 1.5rem;
+                align-self: start;
+                max-height: calc(100vh - 3rem);
+                padding: 1.25rem;
+                overflow-y: auto;
+                border: 1px solid var(--border);
+                border-radius: 14px;
+                background: var(--surface);
+            }
+
+            nav strong {
+                display: block;
+                margin-bottom: 0.65rem;
+            }
+
+            nav a {
+                display: block;
+                padding: 0.32rem 0;
+                color: var(--muted);
+                font-size: 0.9rem;
+            }
+
+            main {
+                min-width: 0;
+            }
+
+            section {
+                margin-bottom: 1.5rem;
+                padding: 1.75rem;
+                border: 1px solid var(--border);
+                border-radius: 14px;
+                background: var(--surface);
+            }
+
+            h2, h3 {
+                scroll-margin-top: 1.5rem;
+            }
+
+            h2 {
+                margin: 0 0 1rem;
+                font-size: 1.5rem;
+            }
+
+            h3 {
+                margin: 1.75rem 0 0.75rem;
+                padding-top: 1.5rem;
+                border-top: 1px solid var(--border);
+                font-size: 1.15rem;
+            }
+
+            h3:first-of-type {
+                margin-top: 0;
+                padding-top: 0;
+                border-top: 0;
+            }
+
+            p, ul {
+                margin: 0.75rem 0;
+            }
+
+            table {
+                width: 100%;
+                border-collapse: collapse;
+                font-size: 0.92rem;
+            }
+
+            th, td {
+                padding: 0.75rem;
+                border-bottom: 1px solid var(--border);
+                text-align: left;
+                vertical-align: top;
+            }
+
+            th {
+                color: var(--muted);
+                background: var(--surface-soft);
+            }
+
+            code {
+                padding: 0.12rem 0.32rem;
+                border-radius: 4px;
+                background: var(--surface-soft);
+                font-family: inherit;
+            }
+
+            pre {
+                margin: 0.9rem 0;
+                padding: 1rem;
+                overflow-x: auto;
+                border-radius: 10px;
+                color: var(--code-text);
+                background: var(--code);
+                line-height: 1.55;
+            }
+
+            pre code {
+                padding: 0;
+                color: inherit;
+                background: transparent;
+            }
+
+            .method {
+                display: inline-block;
+                min-width: 4.2rem;
+                margin-right: 0.55rem;
+                padding: 0.15rem 0.45rem;
+                border-radius: 5px;
+                color: #ffffff;
+                text-align: center;
+                font-size: 0.82rem;
+                font-weight: 700;
+            }
+
+            .get {
+                background: var(--get);
+            }
+
+            .post {
+                background: var(--post);
+            }
+
+            .note, .warning {
+                padding: 0.9rem 1rem;
+                border-left: 4px solid var(--primary);
+                border-radius: 8px;
+                background: var(--surface-soft);
+            }
+
+            .warning {
+                border-left-color: #d97706;
+            }
+
+            .schema {
+                color: var(--muted);
+                font-size: 0.9rem;
+            }
+
+            footer {
+                padding: 2rem;
+                color: var(--muted);
+                text-align: center;
+            }
+
+            @media (prefers-color-scheme: dark) {
+                :root {
+                    --background: #0b1020;
+                    --surface: #121a2b;
+                    --surface-soft: #1b2538;
+                    --text: #e5e7eb;
+                    --muted: #a8b2c5;
+                    --border: #2a3549;
+                    --code: #080c14;
+                }
+            }
+
+            @media (max-width: 860px) {
+                .layout {
+                    grid-template-columns: 1fr;
+                    width: min(100% - 1.5rem, 760px);
+                }
+
+                nav {
+                    position: static;
+                    max-height: none;
+                    columns: 2;
+                }
+
+                section {
+                    padding: 1.2rem;
+                }
+
+                .table-wrap {
+                    overflow-x: auto;
+                }
+            }
+        </style>
+    </head>
+
+    <body>
+        <header>
+            <h1>Ziger API 文档</h1>
+            <div class="meta">
+                <span>Version 6</span>
+                <span>MIT License</span>
+            </div>
+        </header>
+
+        <div class="layout">
+            <nav>
+                <strong>目录</strong>
+                <a href="#overview">路由总览</a>
+                <a href="#authentication">登录与会话</a>
+                <a href="#conventions">请求约定</a>
+                <a href="#file-list">文件列表</a>
+                <a href="#share">查看与下载</a>
+                <a href="#watch">目录变化监听</a>
+                <a href="#file-property">文件属性</a>
+                <a href="#announcement">公告板</a>
+                <a href="#upload">上传</a>
+                <a href="#search">搜索</a>
+                <a href="#delete">删除</a>
+                <a href="#batch-download">批量下载</a>
+                <a href="#make-directory">创建目录</a>
+                <a href="#copy-move">复制与移动</a>
+                <a href="#rename">重命名</a>
+                <a href="#statuses">状态码</a>
+            </nav>
+
+            <main>
+                <section id="overview">
+                    <h2>路由总览</h2>
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr><th>方法</th><th>路径</th><th>用途</th></tr>
+                            </thead>
+                            <tbody>
+                                <tr><td><span class="method get">GET</span></td><td><code>/login/</code></td><td>登录页面</td></tr>
+                                <tr><td><span class="method post">POST</span></td><td><code>/login/</code></td><td>创建登录会话</td></tr>
+                                <tr><td><span class="method get">GET</span></td><td><code>/api/file-list/</code></td><td>列出目录内容</td></tr>
+                                <tr><td><span class="method get">GET</span></td><td><code>/api/share/*</code></td><td>查看目录或读取文件</td></tr>
+                                <tr><td><span class="method get">WS</span></td><td><code>/api/watch/</code></td><td>监听共享目录变化</td></tr>
+                                <tr><td><span class="method post">POST</span></td><td><code>/api/file-property/</code></td><td>计算文件属性</td></tr>
+                                <tr><td><span class="method post">POST</span></td><td><code>/api/edit-announcement/</code></td><td>保存公告内容</td></tr>
+                                <tr><td><span class="method post">POST</span></td><td><code>/api/announcement-content/</code></td><td>读取公告内容</td></tr>
+                                <tr><td><span class="method post">POST</span></td><td><code>/api/upload-file/</code></td><td>上传一个或多个文件</td></tr>
+                                <tr><td><span class="method post">POST</span></td><td><code>/api/search-file/</code></td><td>按名称和文本内容搜索</td></tr>
+                                <tr><td><span class="method post">POST</span></td><td><code>/api/delete-file/</code></td><td>删除文件或目录</td></tr>
+                                <tr><td><span class="method post">POST</span></td><td><code>/api/batch-download/</code></td><td>打包下载多个项目</td></tr>
+                                <tr><td><span class="method post">POST</span></td><td><code>/api/make-directory/</code></td><td>创建目录</td></tr>
+                                <tr><td><span class="method post">POST</span></td><td><code>/api/copy-file/</code></td><td>复制文件或目录</td></tr>
+                                <tr><td><span class="method post">POST</span></td><td><code>/api/move-file/</code></td><td>移动文件或目录</td></tr>
+                                <tr><td><span class="method post">POST</span></td><td><code>/api/rename-file/</code></td><td>单个或批量重命名</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <p class="schema">页面路由还包括 <code>GET /</code>、<code>GET /UI/*</code> 和 <code>GET /docs/</code>。</p>
+                </section>
+
+                <section id="authentication">
+                    <h2>登录与会话</h2>
+                    <p>未设置 <code>--login</code> 时，接口不要求 Cookie。设置密码后，先提交表单登录，再携带服务端返回的 <code>ziger_session</code> Cookie 调用 API。</p>
+                    <pre><code>curl -i -c cookie.txt \
+  -X POST \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  --data-urlencode "password=123456" \
+  http://localhost:8888/login/
+
+curl -b cookie.txt \
+  "http://localhost:8888/api/file-list/?path=."</code></pre>
+                    <p>登录成功返回 <code>303</code> 并跳转到 <code>/</code>。会话 Cookie 设置了 <code>HttpOnly</code>、<code>SameSite=Strict</code>，有效期为 30 分钟。</p>
+                    <p class="warning">未登录访问受保护路由时返回 <code>302</code>，并重定向到 <code>/login/</code>。命令行客户端应保存并发送 Cookie，同时注意不要把登录页面误当作接口结果。</p>
+                </section>
+
+                <section id="conventions">
+                    <h2>请求约定</h2>
+                    <ul>
+                        <li>JSON 接口使用请求头 <code>Content-Type: application/json</code>。</li>
+                        <li>路径相对于共享目录，根目录写作 <code>.</code>，子项目写作 <code>fonts/readme.txt</code>。</li>
+                        <li>不要使用空路径、绝对路径、<code>./fonts</code>、<code>..</code>、重复分隔符或盘符路径。</li>
+                        <li><code>CurrentDir</code> 可以是 <code>.</code>；具体文件项目的 <code>Path</code> 不能是 <code>.</code>。</li>
+                        <li>符号链接不会作为普通共享项目处理。</li>
+                    </ul>
+                    <p>文件操作通常返回逐项结果数组：</p>
+                    <pre><code>[
+  {"Path":"docs/readme.txt","Success":true,"Error":""},
+  {"Path":"docs/missing.txt","Success":false,"Error":"source does not exist"}
+]</code></pre>
+                </section>
+
+                <section id="file-list">
+                    <h2><span class="method get">GET</span>/api/file-list/</h2>
+                    <p>查询指定目录。省略 <code>path</code> 时默认为共享根目录。</p>
+                    <pre><code>curl -b cookie.txt \
+  "http://localhost:8888/api/file-list/?path=fonts"</code></pre>
+                    <p>响应：</p>
+                    <pre><code>[
+  {
+    "FileName":"readme.txt",
+    "FileSize":"103 B",
+    "FileIcon":"txt",
+    "ModifiedTime":"2026-07-20 10:30:00"
+  }
+]</code></pre>
+                    <p class="note">非根目录列表的第一项是用于返回上级的特殊项目 <code>. .</code>。</p>
+                </section>
+
+                <section id="share">
+                    <h2><span class="method get">GET</span>/api/share/{path}</h2>
+                    <p>读取文件或浏览目录。路径中的每个片段都应进行 URL 编码。</p>
+                    <pre><code>curl -b cookie.txt -OJ \
+  "http://localhost:8888/api/share/fonts/readme.txt"</code></pre>
+                    <p>文件响应根据类型使用 <code>inline</code> 或 <code>attachment</code>；目录响应为简单 HTML 列表。不存在的文件返回 <code>404</code>。</p>
+                </section>
+
+                <section id="watch">
+                    <h2><span class="method get">WS</span>/api/watch/</h2>
+                    <p>通过 WebSocket 监听共享目录变化。握手请求同样需要有效会话 Cookie。</p>
+                    <pre><code>const socket = new WebSocket("ws://localhost:8888/api/watch/");
+
+socket.onmessage = event =&gt; {
+  const message = JSON.parse(event.data);
+  if (message.type === "changed") {
+    console.log("共享目录已变化");
+  }
+};</code></pre>
+                    <p>目录发生变化时，服务端发送：</p>
+                    <pre><code>{"type":"changed"}</code></pre>
+                </section>
+
+                <section id="file-property">
+                    <h2><span class="method post">POST</span>/api/file-property/</h2>
+                    <p>计算所选文件和目录的总数量、总大小及最近修改时间。</p>
+                    <pre><code>curl -b cookie.txt \
+  -H "Content-Type: application/json" \
+  -d '[{"Path":"fonts"},{"Path":"readme.txt"}]' \
+  http://localhost:8888/api/file-property/</code></pre>
+                    <pre><code>{
+  "FileCount":4,
+  "SumSize":"20.19 MB",
+  "ModifiedTime":"2026-07-20 10:30:00",
+  "AgoTime":"半小时前（星期一）"
+}</code></pre>
+                </section>
+
+                <section id="announcement">
+                    <h2>公告板</h2>
+                    <h3><span class="method post">POST</span>/api/edit-announcement/</h3>
+                    <p>保存公告内容。该功能受 <code>announcement</code> 按钮开关控制。</p>
+                    <pre><code>curl -b cookie.txt \
+  -H "Content-Type: application/json" \
+  -d '{"Content":"今天 18:00 维护"}' \
+  http://localhost:8888/api/edit-announcement/</code></pre>
+
+                    <h3><span class="method post">POST</span>/api/announcement-content/</h3>
+                    <p>读取当前公告，不需要请求体。</p>
+                    <pre><code>curl -b cookie.txt -X POST \
+  http://localhost:8888/api/announcement-content/</code></pre>
+                    <pre><code>{"Content":"今天 18:00 维护"}</code></pre>
+                </section>
+
+                <section id="upload">
+                    <h2><span class="method post">POST</span>/api/upload-file/</h2>
+                    <p>请求类型为 <code>multipart/form-data</code>。先发送一次 <code>CurrentDir</code>，随后为每个文件重复发送 <code>RelativePath</code> 和 <code>File</code>。</p>
+                    <pre><code>curl -b cookie.txt \
+  -F "CurrentDir=docs" \
+  -F "RelativePath=guide/readme.txt" \
+  -F "File=@./readme.txt" \
+  -F "RelativePath=images/logo.png" \
+  -F "File=@./logo.png" \
+  http://localhost:8888/api/upload-file/</code></pre>
+                    <p><code>RelativePath</code> 决定目标相对路径，允许创建中间目录。目标已经存在时不会覆盖，并在逐项结果中返回失败。</p>
+                    <p class="schema">当 <code>--store</code> 与 <code>--share</code> 不同时，文件保存到存储目录根位置，<code>CurrentDir</code> 不参与共享目录定位。</p>
+                </section>
+
+                <section id="search">
+                    <h2><span class="method post">POST</span>/api/search-file/</h2>
+                    <p>在选定文件或目录中搜索名称及可识别的文本内容。返回路径相对于 <code>CurrentDir</code>。</p>
+                    <pre><code>curl -b cookie.txt \
+  -H "Content-Type: application/json" \
+  -d '{
+    "Path":["docs","src/main.zig"],
+    "Target":"router",
+    "CurrentDir":"."
+  }' \
+  http://localhost:8888/api/search-file/</code></pre>
+                    <pre><code>[
+  {"Path":"src/main.zig","Description":"var router = try server.router(.{});"}
+]</code></pre>
+                </section>
+
+                <section id="delete">
+                    <h2><span class="method post">POST</span>/api/delete-file/</h2>
+                    <p>删除一个或多个文件或目录。根目录 <code>.</code>、绝对路径和越界路径会被拒绝。</p>
+                    <pre><code>curl -b cookie.txt \
+  -H "Content-Type: application/json" \
+  -d '[{"Path":"temp/a.txt"},{"Path":"temp/old"}]' \
+  http://localhost:8888/api/delete-file/</code></pre>
+                    <p class="warning">删除不可恢复，请始终检查 HTTP 状态和每个结果的 <code>Success</code> 字段。</p>
+                </section>
+
+                <section id="batch-download">
+                    <h2><span class="method post">POST</span>/api/batch-download/</h2>
+                    <p>将所选项目写入 ZIP，并以 <code>archive.zip</code> 下载。每个所选项目都以自身 basename 作为归档根；目录内部结构会保留。</p>
+                    <pre><code>curl -b cookie.txt \
+  -H "Content-Type: application/json" \
+  -d '[{"Path":"project/app"},{"Path":"docs/readme.txt"}]' \
+  -o archive.zip \
+  http://localhost:8888/api/batch-download/</code></pre>
+                    <p class="note">不同路径中 basename 相同的两个项目不能同时打包，否则返回 <code>400 DuplicateArchiveName</code>。请求中的 <code>CurrentDir</code> 不影响 ZIP 内结构。</p>
+                </section>
+
+                <section id="make-directory">
+                    <h2><span class="method post">POST</span>/api/make-directory/</h2>
+                    <p>在已有的 <code>CurrentDir</code> 中创建一个目录。<code>Path</code> 是单个目录名称，不能包含 <code>/</code> 或 <code>\</code>。</p>
+                    <pre><code>curl -b cookie.txt \
+  -H "Content-Type: application/json" \
+  -d '{"Path":"images","CurrentDir":"docs"}' \
+  http://localhost:8888/api/make-directory/</code></pre>
+                    <pre><code>[
+  {"Path":"images","Success":true,"Error":""}
+]</code></pre>
+                </section>
+
+                <section id="copy-move">
+                    <h2>复制与移动</h2>
+                    <h3><span class="method post">POST</span>/api/copy-file/</h3>
+                    <pre><code>curl -b cookie.txt \
+  -H "Content-Type: application/json" \
+  -d '[
+    {"Path":"docs/readme.txt","CurrentDir":"backup"},
+    {"Path":"docs/images","CurrentDir":"backup"}
+  ]' \
+  http://localhost:8888/api/copy-file/</code></pre>
+
+                    <h3><span class="method post">POST</span>/api/move-file/</h3>
+                    <pre><code>curl -b cookie.txt \
+  -H "Content-Type: application/json" \
+  -d '[{"Path":"incoming/report.pdf","CurrentDir":"docs"}]' \
+  http://localhost:8888/api/move-file/</code></pre>
+                    <p><code>Path</code> 是源项目，<code>CurrentDir</code> 是目标目录。目标已存在时，服务端自动使用 <code>name (1).ext</code>、<code>name (2).ext</code> 等可用名称，不覆盖已有项目。目录不能复制或移动到自身内部。</p>
+                </section>
+
+                <section id="rename">
+                    <h2><span class="method post">POST</span>/api/rename-file/</h2>
+                    <h3>单个或显式重命名</h3>
+                    <p><code>OldName</code> 和 <code>NewName</code> 都是 <code>CurrentDir</code> 下的单个名称，不包含目录路径。</p>
+                    <pre><code>curl -b cookie.txt \
+  -H "Content-Type: application/json" \
+  -d '[{
+    "CurrentDir":"fonts",
+    "OldName":"readme.txt",
+    "NewName":"README.md",
+    "Prefix":"",
+    "Suffix":""
+  }]' \
+  http://localhost:8888/api/rename-file/</code></pre>
+
+                    <h3>批量重命名</h3>
+                    <p>批量模式下所有项目的 <code>NewName</code> 必须为空。新名称按照请求数组顺序生成；文件保留原扩展名，目录不追加扩展名。</p>
+                    <pre><code>curl -b cookie.txt \
+  -H "Content-Type: application/json" \
+  -d '[
+    {"CurrentDir":"photos","OldName":"a.jpg","NewName":"","Prefix":"图片","Suffix":"号"},
+    {"CurrentDir":"photos","OldName":"b.jpg","NewName":"","Prefix":"图片","Suffix":"号"}
+  ]' \
+  http://localhost:8888/api/rename-file/</code></pre>
+                    <p>结果名称为 <code>图片1号.jpg</code> 和 <code>图片2号.jpg</code>。同一请求不能混合显式名称模式与批量前后缀模式；目标存在时不会覆盖。</p>
+                </section>
+
+                <section id="statuses">
+                    <h2>HTTP 状态码</h2>
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr><th>状态</th><th>含义</th></tr>
+                            </thead>
+                            <tbody>
+                                <tr><td><code>200</code></td><td>请求成功，文件操作全部成功</td></tr>
+                                <tr><td><code>207</code></td><td>批量文件操作部分成功、部分失败</td></tr>
+                                <tr><td><code>302</code></td><td>未登录，重定向到登录页</td></tr>
+                                <tr><td><code>303</code></td><td>登录成功，跳转到首页</td></tr>
+                                <tr><td><code>400</code></td><td>JSON、路径、WebSocket 握手或请求参数无效</td></tr>
+                                <tr><td><code>401</code></td><td>登录密码错误</td></tr>
+                                <tr><td><code>403</code></td><td>对应功能被 <code>--button</code> 配置禁用</td></tr>
+                                <tr><td><code>404</code></td><td>文件或页面不存在</td></tr>
+                                <tr><td><code>409</code></td><td>全部文件操作失败，通常是目标冲突或操作失败</td></tr>
+                                <tr><td><code>413</code></td><td>上传或公告请求体超过配置限制</td></tr>
+                                <tr><td><code>500</code></td><td>存储、归档或服务器内部错误</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+            </main>
+        </div>
+
+        <footer>
+            Local Transfer · <a href="https://github.com/Illusionna/LocalTransfer" target="_blank" rel="noopener noreferrer">GitHub</a> · www@orzzz.net
+        </footer>
+    </body>
+</html>

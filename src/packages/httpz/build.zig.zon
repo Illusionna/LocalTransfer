@@ -1,0 +1,10 @@
+.{
+    .name = .httpz,
+    .paths = .{""},
+    .version = "0.0.0",
+    .fingerprint = 0x472add02ac73d53c,
+    .dependencies = .{
+        .metrics = .{ .path = "../metrics" },
+        .websocket = .{ .path = "../websocket" },
+    },
+}

@@ -1,0 +1,14 @@
+.{
+    .name = .metrics,
+    .paths = .{
+        "LICENSE",
+        "build.zig",
+        "build.zig.zon",
+        "readme.md",
+        "src",
+        "example",
+    },
+    .version = "0.0.0",
+    .minimum_zig_version = "0.16.0",
+    .fingerprint = 0x228aaae778b8b15b,
+}

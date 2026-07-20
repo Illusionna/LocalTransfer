@@ -1,0 +1,444 @@
+const std = @import("std");
+
+const Io = std.Io;
+const Thread = std.Thread;
+const Allocator = std.mem.Allocator;
+
+pub const Opts = struct {
+    count: u32,
+    backlog: u32,
+    buffer_size: usize,
+};
+
+pub fn ThreadPool(comptime F: anytype) type {
+    const BATCH_SIZE = 16;
+
+    // When the worker thread calls F, it'll inject its static buffer.
+    // So F would be: handle(server: *Server, conn: *Conn, buf: []u8)
+    // and FullArgs would be our 3 args....
+    const FullArgs = std.meta.ArgsTuple(@TypeOf(F));
+    const Args = SpawnArgs(FullArgs);
+
+    return struct {
+        stopped: bool,
+        threads: []Thread,
+        worker_index: usize,
+        workers: []Worker(F),
+        arena: std.heap.ArenaAllocator,
+
+        // we queue jobs here before batching them to a worker. We do this
+        // to minimze the amount of locking we need to do.
+        batch: [BATCH_SIZE]Args,
+        batch_size: usize,
+
+        const Self = @This();
+
+        // we expect allocator to be an Arena
+        pub fn init(io: Io, allocator: Allocator, opts: Opts) !Self {
+            var arena = std.heap.ArenaAllocator.init(allocator);
+            errdefer arena.deinit();
+
+            const aa = arena.allocator();
+
+            const threads = try aa.alloc(Thread, opts.count);
+            const workers = try aa.alloc(Worker(F), opts.count);
+
+            var started: usize = 0;
+            errdefer for (0..started) |i| {
+                workers[i].stop();
+                threads[i].join();
+            };
+
+            for (0..workers.len) |i| {
+                workers[i] = try Worker(F).init(io, aa, &workers[@mod(i + i, workers.len)], opts);
+            }
+            for (0..workers.len) |i| {
+                threads[i] = try Thread.spawn(.{}, Worker(F).run, .{&workers[i]});
+                started += 1;
+            }
+
+            return .{
+                .arena = arena,
+                .worker_index = 0,
+                .stopped = false,
+                .workers = workers,
+                .threads = threads,
+                .batch = undefined,
+                .batch_size = 0,
+            };
+        }
+
+        pub fn deinit(self: *Self) void {
+            self.arena.deinit();
+        }
+
+        pub fn stop(self: *Self) void {
+            if (@atomicRmw(bool, &self.stopped, .Xchg, true, .monotonic) == true) {
+                return;
+            }
+
+            for (self.workers, self.threads) |*worker, *thread| {
+                worker.stop();
+                thread.join();
+            }
+        }
+
+        pub fn spawn(self: *Self, args: Args) void {
+            var i = self.batch_size;
+            self.batch[i] = args;
+            i += 1;
+
+            if (i == BATCH_SIZE) {
+                self.flush(i);
+                i = 0;
+            }
+            self.batch_size = i;
+        }
+
+        pub fn spawnOne(self: *Self, args: Args) void {
+            const worker_index = self.worker_index +% 1;
+            self.worker_index = worker_index;
+            const workers = self.workers;
+            workers[@mod(worker_index, workers.len)].spawn(&.{args});
+        }
+
+        pub fn flush(self: *Self, batch_size: usize) void {
+            self.batch_size = 0;
+
+            const worker_index = self.worker_index +% 1;
+            self.worker_index = worker_index;
+            const workers = self.workers;
+            workers[@mod(worker_index, workers.len)].spawn(self.batch[0..batch_size]);
+        }
+
+        pub fn empty(self: *Self) bool {
+            for (self.workers) |*w| {
+                if (w.empty() == false) {
+                    return false;
+                }
+            }
+            return true;
+        }
+    };
+}
+
+fn Worker(comptime F: anytype) type {
+    // When the worker thread calls F, it'll inject its static buffer.
+    // So F would be: handle(server: *Server, conn: *Conn, buf: []u8)
+    // and FullArgs would be our 3 args....
+    const FullArgs = std.meta.ArgsTuple(@TypeOf(F));
+    const Args = SpawnArgs(FullArgs);
+
+    return struct {
+        io: Io,
+
+        // position in queue to read from
+        tail: usize,
+
+        // position in the queue to write to
+        head: usize,
+
+        // pending jobs
+        queue: []Args,
+
+        buffer: []u8,
+
+        stopped: bool,
+        mutex: Io.Mutex,
+        read_cond: Io.Condition,
+        write_cond: Io.Condition,
+        peer: *Worker(F),
+
+        const Self = @This();
+
+        // we expect allocator to be an Arena
+        pub fn init(io: Io, allocator: Allocator, peer: *Worker(F), opts: Opts) !Self {
+            const queue = try allocator.alloc(Args, if (opts.backlog == 0 or opts.backlog == 1) 2 else opts.backlog);
+            const buffer = try allocator.alloc(u8, opts.buffer_size);
+
+            return .{
+                .io = io,
+                .tail = 0,
+                .head = 0,
+                .peer = peer,
+                .mutex = .init,
+                .stopped = false,
+                .queue = queue,
+                .read_cond = .init,
+                .write_cond = .init,
+                .buffer = buffer,
+            };
+        }
+
+        pub fn stop(self: *Self) void {
+            const io = self.io;
+            {
+                // allow stop to be called as part of server.stop()
+                // but also in server.deinit(), or in both.
+                self.mutex.lockUncancelable(io);
+                defer self.mutex.unlock(io);
+                if (self.stopped) {
+                    return;
+                }
+                self.stopped = true;
+            }
+            self.read_cond.broadcast(io);
+        }
+
+        pub fn empty(self: *Self) bool {
+            const io = self.io;
+            self.mutex.lockUncancelable(io);
+            defer self.mutex.unlock(io);
+            return self.head == self.tail;
+        }
+
+        pub fn spawn(self: *Self, args: []const Args) void {
+            const io = self.io;
+            var pending = args;
+            var capacity: usize = 0;
+
+            const queue = self.queue;
+            const queue_end = queue.len - 1;
+
+            while (true) {
+                self.mutex.lockUncancelable(io);
+                var head = self.head;
+                var tail = self.tail;
+                while (true) {
+                    capacity = if (head < tail) tail - head - 1 else queue_end - head + tail;
+                    if (capacity > 0) {
+                        break;
+                    }
+                    self.write_cond.waitUncancelable(io, &self.mutex);
+                    head = self.head;
+                    tail = self.tail;
+                }
+
+                const ready = if (capacity >= pending.len) pending else pending[0..capacity];
+                for (ready) |a| {
+                    queue[head] = a;
+                    head = if (head == queue_end) 0 else head + 1;
+                }
+                self.head = head;
+                self.mutex.unlock(io);
+                self.read_cond.signal(io);
+                if (ready.len == pending.len) {
+                    break;
+                }
+                pending = pending[ready.len..];
+            }
+        }
+
+        // Having a re-usable buffer per thread is the most efficient way
+        // we can do any dynamic allocations. We'll pair this later with
+        // a FallbackAllocator. The main issue is that some data must outlive
+        // the worker thread (in nonblocking mode), but this isn't something
+        // we need to worry about here. As far as this worker thread is
+        // concerned, it has a chunk of memory (buffer) which it'll pass
+        // to the callback function to do with as it wants.
+        fn run(self: *Self) void {
+            const buffer = self.buffer;
+            while (true) {
+                const args = self.getNext(true) orelse return;
+
+                // convert Args to FullArgs, i.e. inject buffer as the last argument
+                var full_args: FullArgs = undefined;
+                const ARG_COUNT = std.meta.fields(FullArgs).len - 1;
+                full_args[ARG_COUNT] = buffer;
+                inline for (0..ARG_COUNT) |i| {
+                    full_args[i] = args[i];
+                }
+                @call(.auto, F, full_args);
+            }
+        }
+
+        fn getNext(self: *Self, block: bool) ?Args {
+            const io = self.io;
+            const queue = self.queue;
+            const queue_end = queue.len - 1;
+
+            self.mutex.lockUncancelable(io);
+            while (self.tail == self.head) {
+                if (block == false or self.stopped) {
+                    self.mutex.unlock(io);
+                    return null;
+                }
+
+                self.mutex.unlock(io);
+                if (self.peer.getNext(false)) |args| {
+                    return args;
+                }
+                self.mutex.lockUncancelable(io);
+                if (self.tail == self.head) {
+                    self.read_cond.waitUncancelable(io, &self.mutex);
+                } else {
+                    break;
+                }
+            }
+
+            const tail = self.tail;
+            const args = queue[tail];
+            self.tail = if (tail == queue_end) 0 else tail + 1;
+            self.mutex.unlock(io);
+            self.write_cond.signal(io);
+            return args;
+        }
+    };
+}
+
+fn SpawnArgs(FullArgs: anytype) type {
+    const full_fields = std.meta.fields(FullArgs);
+    const ARG_COUNT = full_fields.len - 1;
+
+    // Args will be FullArgs[0..len-1], so in the above example, args would be
+    // (*Server, *Conn)
+    // Args is what we expect the caller to pass to spawn. The worker thread
+    // will convert an Args into FullArgs by injecting its static buffer as
+    // the final argument.
+
+    // TODO: We could verify that the last argument to FullArgs is, in fact, a
+    // []u8. But this ThreadPool is private and being used for 2 specific cases
+    // that we control.
+
+    var field_types: [ARG_COUNT]type = undefined;
+    inline for (full_fields[0..ARG_COUNT], 0..) |field, i| {
+        field_types[i] = field.type;
+    }
+    return @Tuple(&field_types);
+}
+
+const t = @import("t.zig");
+test "ThreadPool: batch add" {
+    defer t.reset();
+
+    const counts = [_]u32{ 1, 2, 3, 4, 5, 6 };
+    const backlogs = [_]u32{ 1, 2, 3, 4, 5, 6 };
+    for (counts) |count| {
+        for (backlogs) |backlog| {
+            testSum = 0; // global defined near the end of this file
+            testCount = 0; // global defined near the end of this file
+            testC1 = 0;
+            testC2 = 0;
+            testC3 = 0;
+            testC4 = 0;
+            testC5 = 0;
+            testC6 = 0;
+            var tp = try ThreadPool(testIncr).init(t.io, t.arena.allocator(), .{ .count = count, .backlog = backlog, .buffer_size = 512 });
+            defer tp.deinit();
+
+            for (0..1_000) |_| {
+                tp.spawn(.{1});
+                tp.spawn(.{2});
+                tp.spawn(.{3});
+                tp.spawn(.{4});
+            }
+            while (tp.empty() == false) {
+                try t.io.sleep(.fromMilliseconds(1), .awake);
+            }
+            tp.stop();
+            try t.expectEqual(10_000, testSum);
+            try t.expectEqual(4_000, testCount);
+
+            try t.expectEqual(1000, testC1);
+            try t.expectEqual(1000, testC2);
+            try t.expectEqual(1000, testC3);
+            try t.expectEqual(1000, testC4);
+            try t.expectEqual(0, testC5);
+            try t.expectEqual(0, testC6);
+        }
+    }
+}
+
+test "ThreadPool: small fuzz" {
+    defer t.reset();
+
+    testSum = 0; // global defined near the end of this file
+    testCount = 0; // global defined near the end of this file
+    testC1 = 0;
+    testC2 = 0;
+    testC3 = 0;
+    testC4 = 0;
+    testC5 = 0;
+    testC6 = 0;
+    var tp = try ThreadPool(testIncr).init(t.io, t.arena.allocator(), .{ .count = 3, .backlog = 3, .buffer_size = 512 });
+    defer tp.deinit();
+
+    for (0..10_000) |_| {
+        tp.spawn(.{1});
+        tp.spawn(.{2});
+        tp.spawn(.{3});
+    }
+    while (tp.empty() == false) {
+        try t.io.sleep(.fromMilliseconds(1), .awake);
+    }
+    tp.stop();
+    try t.expectEqual(60_000, testSum);
+    try t.expectEqual(30_000, testCount);
+    try t.expectEqual(10_000, testC1);
+    try t.expectEqual(10_000, testC2);
+    try t.expectEqual(10_000, testC3);
+    try t.expectEqual(0, testC4);
+    try t.expectEqual(0, testC5);
+    try t.expectEqual(0, testC6);
+}
+
+test "ThreadPool: large fuzz" {
+    defer t.reset();
+
+    testSum = 0; // global defined near the end of this file
+    testCount = 0; // global defined near the end of this file
+    testC1 = 0;
+    testC2 = 0;
+    testC3 = 0;
+    testC4 = 0;
+    testC5 = 0;
+    testC6 = 0;
+    var tp = try ThreadPool(testIncr).init(t.io, t.arena.allocator(), .{ .count = 50, .backlog = 1000, .buffer_size = 512 });
+    defer tp.deinit();
+
+    for (0..10_000) |_| {
+        tp.spawn(.{1});
+        tp.spawn(.{2});
+        tp.spawn(.{3});
+        tp.spawn(.{4});
+        tp.spawn(.{5});
+        tp.spawn(.{6});
+    }
+    while (tp.empty() == false) {
+        try t.io.sleep(.fromMilliseconds(1), .awake);
+    }
+    tp.stop();
+    try t.expectEqual(210_000, testSum);
+    try t.expectEqual(60_000, testCount);
+    try t.expectEqual(10_000, testC1);
+    try t.expectEqual(10_000, testC2);
+    try t.expectEqual(10_000, testC3);
+    try t.expectEqual(10_000, testC4);
+    try t.expectEqual(10_000, testC5);
+    try t.expectEqual(10_000, testC6);
+}
+
+var testSum: u64 = 0;
+var testCount: u64 = 0;
+var testC1: u64 = 0;
+var testC2: u64 = 0;
+var testC3: u64 = 0;
+var testC4: u64 = 0;
+var testC5: u64 = 0;
+var testC6: u64 = 0;
+fn testIncr(c: u64, buf: []u8) void {
+    std.debug.assert(buf.len == 512);
+    _ = @atomicRmw(u64, &testSum, .Add, c, .monotonic);
+    _ = @atomicRmw(u64, &testCount, .Add, 1, .monotonic);
+    switch (c) {
+        1 => _ = @atomicRmw(u64, &testC1, .Add, 1, .monotonic),
+        2 => _ = @atomicRmw(u64, &testC2, .Add, 1, .monotonic),
+        3 => _ = @atomicRmw(u64, &testC3, .Add, 1, .monotonic),
+        4 => _ = @atomicRmw(u64, &testC4, .Add, 1, .monotonic),
+        5 => _ = @atomicRmw(u64, &testC5, .Add, 1, .monotonic),
+        6 => _ = @atomicRmw(u64, &testC6, .Add, 1, .monotonic),
+        else => unreachable,
+    }
+    // let the threadpool queue get backed up
+    t.io.sleep(.fromMicroseconds(20), .awake) catch unreachable;
+}
