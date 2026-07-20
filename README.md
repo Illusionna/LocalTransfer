@@ -34,7 +34,7 @@ Zig Local Transfer 是一个 HTTP 文件服务器，具备图形化界面，支�
 下载仓库代码：
 
 ```sh
-git clone https://github.com/Illusionna/LocalTransfer.git
+git clone --depth 1 https://github.com/Illusionna/LocalTransfer.git
 ```
 
 编译可执行文件：
