@@ -237,7 +237,10 @@ pub fn parse_flags(args: [][:0]const u8, cfg: *class.AppConfig, state: *class.Ap
             cfg.share_dir = v;
             cfg.store_dir = v;
         }
-        else if (std.mem.eql(u8, arg, "--store") or std.mem.eql(u8, arg, "-store")) cfg.store_dir = v else if (std.mem.eql(u8, arg, "--max") or std.mem.eql(u8, arg, "-max")) cfg.limit_max = v else if (std.mem.eql(u8, arg, "--login") or std.mem.eql(u8, arg, "-login")) cfg.login_pwd = v else if (std.mem.eql(u8, arg, "--button") or std.mem.eql(u8, arg, "-button")) {
+        else if (std.mem.eql(u8, arg, "--store") or std.mem.eql(u8, arg, "-store")) cfg.store_dir = v
+        else if (std.mem.eql(u8, arg, "--max") or std.mem.eql(u8, arg, "-max")) cfg.limit_max = v
+        else if (std.mem.eql(u8, arg, "--login") or std.mem.eql(u8, arg, "-login")) cfg.login_pwd = v
+        else if (std.mem.eql(u8, arg, "--button") or std.mem.eql(u8, arg, "-button")) {
             if (!parse_button_flags(v, state)) return false;
         } else return false;
     }
@@ -245,21 +248,20 @@ pub fn parse_flags(args: [][:0]const u8, cfg: *class.AppConfig, state: *class.Ap
 }
 
 
-pub fn dir_hash(io: std.Io, allocator: std.mem.Allocator, dir: []const u8) u64 {
+pub fn dir_hash(io: std.Io, allocator: std.mem.Allocator, dir: []const u8) !u64 {
     var hasher = std.hash.Wyhash.init(0);
-    var d = std.Io.Dir.cwd().openDir(io, dir, .{ .iterate = true }) catch return 0;
+    var d = try std.Io.Dir.cwd().openDir(io, dir, .{ .iterate = true });
     defer d.close(io);
-    var walker = d.walk(allocator) catch return 0;
+    var walker = try d.walk(allocator);
     defer walker.deinit();
-
-    while (walker.next(io) catch null) |entry| {
+    while (try walker.next(io)) |entry| {
         if (is_internal_temporary_path(entry.path)) continue;
         hasher.update(entry.path);
         if (entry.kind == .directory) {
             hasher.update("/");
             continue;
         }
-        const stat = entry.dir.statFile(io, entry.basename, .{}) catch continue;
+        const stat = try entry.dir.statFile(io, entry.basename, .{});
         const size_bytes = std.mem.asBytes(&stat.size);
         hasher.update(size_bytes);
         const time_bytes = std.mem.asBytes(&stat.mtime.nanoseconds);
@@ -560,8 +562,7 @@ fn zeller_weekday(year: i32, month: i32, day: i32) []const u8 {
         m = month;
         y = @mod(year, 100);
         c = @divTrunc(year, 100);
-    }
-    else {
+    } else {
         m = month + 12;
         y = @mod(year - 1, 100);
         c = @divTrunc(year - 1, 100);
