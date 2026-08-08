@@ -16,14 +16,11 @@ pub fn monitor(io: std.Io, allocator: std.mem.Allocator, hub: *class.WatchHub, s
         return;
     };
     defer allocator.free(root);
-    var previous = utils.dir_hash(io, allocator, root);
-    const context = class.MonitorContext{
-        .io = io,
-        .allocator = allocator,
-        .hub = hub,
-        .root = root,
-        .previous_hash = &previous
+    var previous = utils.dir_hash(io, allocator, root) catch |err| {
+        std.log.err("cannot hash shared directory: {s}", .{ @errorName(err) });
+        return;
     };
+    const context = class.MonitorContext{ .io = io, .allocator = allocator, .hub = hub, .root = root, .previous_hash = &previous };
     switch (builtin.os.tag) {
         .linux => monitor_linux(context) catch |err| std.log.err("inotify supervisor failed: {s}", .{ @errorName(err) }),
         .macos => monitor_macos(context) catch |err| std.log.err("FSEvents supervisor failed: {s}", .{ @errorName(err) }),
@@ -40,7 +37,10 @@ fn refresh_after_native_change(context: class.MonitorContext) void {
 
 
 fn broadcast_if_directory_changed(context: class.MonitorContext) void {
-    const current_hash = utils.dir_hash(context.io, context.allocator, context.root);
+    const current_hash = utils.dir_hash(context.io, context.allocator, context.root) catch |err| {
+        std.log.warn("cannot hash shared directory: {s}", .{@errorName(err)});
+        return;
+    };
     if (current_hash == context.previous_hash.*) return;
     context.previous_hash.* = current_hash;
     context.hub.broadcast(context.io, context.allocator, class.changed_message);
@@ -137,14 +137,7 @@ fn monitor_macos(context: class.MonitorContext) !void {
 }
 
 
-fn mac_event(
-    _: *const anyopaque,
-    context: ?*anyopaque,
-    _: usize,
-    _: *anyopaque,
-    _: [*]const u32,
-    _: [*]const u64
-) callconv(.c) void {
+fn mac_event(_: *const anyopaque, context: ?*anyopaque, _: usize, _: *anyopaque, _: [*]const u32, _: [*]const u64) callconv(.c) void {
     const semaphore: std.c.dispatch.semaphore_t = @ptrCast(@alignCast(context));
     _ = semaphore.signal();
 }
