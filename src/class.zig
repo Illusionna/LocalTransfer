@@ -4,6 +4,115 @@ const builtin = @import("builtin");
 const utils = @import("utils.zig");
 
 
+pub const changed_message = "{\"type\": \"changed\"}";
+pub const settle_time = std.Io.Duration.fromMilliseconds(500);
+pub const shutdown_poll_ms = 1000;
+pub const cf_string_utf8 = 0x0800_0100;
+
+
+pub const search_max_roots = 32;
+pub const search_max_depth = 16;
+pub const search_max_files = 5_000;
+pub const search_max_results = 512;
+pub const search_default_page_size = 64;
+pub const search_max_duration_ms = 12_000;
+pub const search_max_file_read_bytes = 256 * 1024;
+
+
+pub const LinuxWatch = struct {
+    const init_nonblock = 0x800;
+    const init_cloexec = 0x80000;
+    const event_mask = 0x0000_0fce;
+};
+
+
+pub const WindowsWatch = struct {
+    const filter = 0x0000_001f;
+    const wait_signaled = 0;
+    const wait_timeout = 0x0000_0102;
+};
+
+
+pub const MonitorContext = struct {
+    io: std.Io,
+    allocator: std.mem.Allocator,
+    hub: *WatchHub,
+    root: []const u8,
+    previous_hash: *u64
+};
+
+
+const FSEventStreamContext = extern struct {
+    version: isize,
+    info: ?*anyopaque,
+    retain: ?*const anyopaque = null,
+    release: ?*const anyopaque = null,
+    copy_description: ?*const anyopaque = null,
+};
+
+
+const FSEventStreamCreateFlags = packed struct(u32) {
+    use_cf_types: bool = false,
+    no_defer: bool = false,
+    watch_root: bool = false,
+    ignore_self: bool = false,
+    file_events: bool = false,
+    _: u27 = 0,
+};
+
+
+pub const MacApi = struct {
+    FSEventStreamCreate: *const fn (
+        ?*const anyopaque,
+        *const fn (
+            *const anyopaque,
+            ?*anyopaque,
+            usize,
+            *anyopaque,
+            [*]const u32,
+            [*]const u64
+        ) callconv(.c) void,
+        ?*const FSEventStreamContext,
+        *const anyopaque,
+        u64,
+        f64,
+        FSEventStreamCreateFlags
+    ) callconv(.c) ?*anyopaque,
+    FSEventStreamSetDispatchQueue: *const fn (*anyopaque, std.c.dispatch.queue_t) callconv(.c) void,
+    FSEventStreamStart: *const fn (*anyopaque) callconv(.c) bool,
+    FSEventStreamStop: *const fn (*anyopaque) callconv(.c) void,
+    FSEventStreamInvalidate: *const fn (*anyopaque) callconv(.c) void,
+    FSEventStreamRelease: *const fn (*anyopaque) callconv(.c) void,
+    CFRelease: *const fn (*const anyopaque) callconv(.c) void,
+    CFArrayCreate: *const fn (
+        ?*const anyopaque,
+        [*]const usize,
+        isize,
+        ?*const anyopaque
+    ) callconv(.c) ?*const anyopaque,
+    CFStringCreateWithCString: *const fn (?*const anyopaque, [*:0]const u8, u32) callconv(.c) ?*const anyopaque
+};
+
+
+pub const SearchBudget = struct {
+    started: std.Io.Timestamp,
+    scanned_files: usize = 0,
+    truncated: bool = false,
+
+    pub fn exhausted(self: *SearchBudget, io: std.Io) bool {
+        if (self.scanned_files >= search_max_files) {
+            self.truncated = true;
+            return true;
+        }
+        if (self.started.untilNow(io, .awake).toMilliseconds() >= search_max_duration_ms) {
+            self.truncated = true;
+            return true;
+        }
+        return false;
+    }
+};
+
+
 pub const SigintSet = if (builtin.os.tag == .windows) void else std.posix.sigset_t;
 
 
@@ -39,7 +148,7 @@ pub const WebOption = enum {
     status_mkdir,
     status_copy,
     status_move,
-    status_rename
+    status_rename 
 };
 
 
@@ -69,7 +178,6 @@ const Entry = struct {
 pub const UI = struct {
     path: []const u8,
     file: []const u8,
-    etag: []const u8
 };
 
 
@@ -78,7 +186,7 @@ pub const App = struct {
     hub: *WatchHub,
     gpa: std.mem.Allocator,
     state: *AppState,
-    io: std.Io
+    io: std.Io,
 };
 
 
@@ -88,13 +196,13 @@ pub const StdTimeFormat = struct {
     day: u5,
     hour: u5,
     minute: u6,
-    second: u6
+    second: u6,
 };
 
 
 pub const ChineseTime = struct {
     interval: i64,
-    label: []const u8
+    label: []const u8,
 };
 
 
@@ -102,13 +210,13 @@ pub const FileInfo = struct {
     FileName: []const u8,
     FileSize: []const u8,
     FileIcon: []const u8,
-    ModifiedTime: []const u8
+    ModifiedTime: []const u8,
 };
 
 
 pub const FileRequest = struct {
     Path: []const u8 = "",
-    CurrentDir: []const u8 = ""
+    CurrentDir: []const u8 = "",
 };
 
 
@@ -116,14 +224,16 @@ pub const FileProperty = struct {
     FileCount: i64,
     SumSize: []const u8,
     ModifiedTime: []const u8,
-    AgoTime: []const u8
+    AgoTime: []const u8,
 };
 
 
 pub const FileSearch = struct {
     Path: []const []const u8 = &.{},
     Target: []const u8 = "",
-    CurrentDir: []const u8 = ""
+    CurrentDir: []const u8 = "",
+    Offset: usize = 0,
+    Limit: usize = 0,
 };
 
 
@@ -132,7 +242,7 @@ pub const FileRename = struct {
     OldName: []const u8 = "",
     NewName: []const u8 = "",
     Prefix: []const u8 = "",
-    Suffix: []const u8 = ""
+    Suffix: []const u8 = "",
 };
 
 
@@ -142,46 +252,56 @@ pub const RenamePlan = struct {
     temporary: []u8,
     display: []const u8,
     is_directory: bool,
-    state: enum { pending, staged, committed, unchanged } = .pending
+    state: enum { pending, staged, committed, unchanged } = .pending,
 };
 
 
 pub const FileOperationResult = struct {
     Path: []const u8,
     Success: bool,
-    Error: []const u8 = ""
+    Error: []const u8 = "",
 };
 
 
 pub const SearchResult = struct {
     Path: []const u8,
-    Description: []const u8 = ""
+    Description: []const u8 = "",
+};
+
+
+pub const SearchResponse = struct {
+    Results: []const SearchResult,
+    NextOffset: ?usize = null,
+    Truncated: bool = false,
+    ScannedFiles: usize = 0,
 };
 
 
 pub const FileSizeCount = struct {
     size: i64,
-    count: i64
+    count: i64,
 };
 
 
 pub const ContentPresentation = struct {
     content_type: []const u8,
-    should_inline: bool
+    should_inline: bool,
 };
 
 
 pub const Listener = struct {
     id: u64,
     ctx: *anyopaque,
-    callback: *const fn (*anyopaque, []const u8) anyerror!void
+    callback: *const fn (*anyopaque, []const u8) anyerror!void,
+    active_callbacks: usize = 0,
+    removing: bool = false,
 };
 
 
 pub const WatchContext = struct {
     io: std.Io,
     gpa: std.mem.Allocator,
-    hub: *WatchHub
+    hub: *WatchHub,
 };
 
 
@@ -237,21 +357,16 @@ pub const AppConfig = struct {
         while (i < trimmed.len) : (i = i + 1) if (!(std.ascii.isDigit(trimmed[i]) or trimmed[i] == '.')) break;
 
         const number = trimmed[0 .. i];
-        var unit = std.mem.trim(u8, trimmed[i..], " \t");
+        var unit = std.mem.trim(u8, trimmed[i .. ], " \t");
         if (number.len == 0) return default;
         const value = std.fmt.parseFloat(f64, number) catch return default;
 
         var buffer: [4]u8 = undefined;
         if (unit.len > buffer.len) return default;
-        for (unit, 0..) |c, j| buffer[j] = std.ascii.toUpper(c);
+        for (unit, 0 .. ) |c, j| buffer[j] = std.ascii.toUpper(c);
         unit = buffer[0 .. unit.len];
 
-        const multiplier: f64 = if (std.mem.eql(u8, unit, "B")) 1.0
-                                else if (std.mem.eql(u8, unit, "KB")) 1024.0
-                                else if (std.mem.eql(u8, unit, "MB")) 1024.0 * 1024.0
-                                else if (std.mem.eql(u8, unit, "GB")) 1024.0 * 1024.0 * 1024.0
-                                else if (std.mem.eql(u8, unit, "TB")) 1024.0 * 1024.0 * 1024.0 * 1024.0
-                                else return default;
+        const multiplier: f64 = if (std.mem.eql(u8, unit, "B")) 1.0 else if (std.mem.eql(u8, unit, "KB")) 1024.0 else if (std.mem.eql(u8, unit, "MB")) 1024.0 * 1024.0 else if (std.mem.eql(u8, unit, "GB")) 1024.0 * 1024.0 * 1024.0 else if (std.mem.eql(u8, unit, "TB")) 1024.0 * 1024.0 * 1024.0 * 1024.0 else return default;
         return @intFromFloat(value * multiplier);
     }
 
@@ -261,19 +376,12 @@ pub const AppConfig = struct {
         var best_score: u8 = 0;
 
         if (comptime os == .macos or os == .linux) {
-            const c = @cImport(
-                {
-                    @cInclude("ifaddrs.h");
-                    @cInclude("net/if.h");
-                    @cInclude("netinet/in.h");
-                }
-            );
-            const excluded = [_][]const u8 {
-                "utun", "tun", "tap", "wg", "ppp",
-                "ipsec", "awdl", "llw", "bridge",
-                "br-", "docker", "veth", "virbr",
-                "vmnet", "vboxnet", "tailscale", "zerotier"
-            };
+            const c = @cImport({
+                @cInclude("ifaddrs.h");
+                @cInclude("net/if.h");
+                @cInclude("netinet/in.h");
+            });
+            const excluded = [_][]const u8{ "utun", "tun", "tap", "wg", "ppp", "ipsec", "awdl", "llw", "bridge", "br-", "docker", "veth", "virbr", "vmnet", "vboxnet", "tailscale", "zerotier" };
 
             var interfaces: ?*c.struct_ifaddrs = null;
             if (c.getifaddrs(&interfaces) != 0) return error.InterfaceEnumerationFailed;
@@ -295,11 +403,7 @@ pub const AppConfig = struct {
                 const bytes: *const [4]u8 = @ptrCast(&ipv4.*.sin_addr);
                 if (bytes[0] == 0 or bytes[0] == 127 or (bytes[0] == 169 and bytes[1] == 254)) continue;
 
-                const score: u8 = if (os == .macos and std.mem.eql(u8, name, "en0")) 40
-                                  else if (os == .macos and std.mem.startsWith(u8, name, "en")) 30
-                                  else if (os == .linux and (std.mem.startsWith(u8, name, "wl") or std.mem.startsWith(u8, name, "wlan"))) 30
-                                  else if (os == .linux and (std.mem.startsWith(u8, name, "eth") or std.mem.startsWith(u8, name, "en"))) 20
-                                  else 10;
+                const score: u8 = if (os == .macos and std.mem.eql(u8, name, "en0")) 40 else if (os == .macos and std.mem.startsWith(u8, name, "en")) 30 else if (os == .linux and (std.mem.startsWith(u8, name, "wl") or std.mem.startsWith(u8, name, "wlan"))) 30 else if (os == .linux and (std.mem.startsWith(u8, name, "eth") or std.mem.startsWith(u8, name, "en"))) 20 else 10;
 
                 if (score > best_score) {
                     best_score = score;
@@ -307,21 +411,15 @@ pub const AppConfig = struct {
                 }
             }
         }
-
         else if (comptime os == .windows) {
-            const c = @cImport(
-                {
-                    @cDefine("_WIN32_WINNT", "0x0501");
-                    @cInclude("winsock2.h");
-                    @cInclude("iphlpapi.h");
-                    @cInclude("iptypes.h");
-                }
-            );
+            const c = @cImport({
+                @cDefine("_WIN32_WINNT", "0x0501");
+                @cInclude("winsock2.h");
+                @cInclude("iphlpapi.h");
+                @cInclude("iptypes.h");
+            });
             const flags = c.GAA_FLAG_SKIP_ANYCAST | c.GAA_FLAG_SKIP_MULTICAST | c.GAA_FLAG_SKIP_DNS_SERVER;
-            const virtual_adapter_words = [_][]const u8 {
-                "tap", "tun", "wireguard", "wintun", "openvpn", "hyper-v",
-                "tailscale", "zerotier", "virtualbox", "vmware", "docker"
-            };
+            const virtual_adapter_words = [_][]const u8{ "tap", "tun", "wireguard", "wintun", "openvpn", "hyper-v", "tailscale", "zerotier", "virtualbox", "vmware", "docker" };
             var buffer_size: c.ULONG = 0;
             if (c.GetAdaptersAddresses(c.AF_INET, flags, null, null, &buffer_size) != c.ERROR_BUFFER_OVERFLOW) return error.InterfaceEnumerationFailed;
 
@@ -341,12 +439,12 @@ pub const AppConfig = struct {
                 const score: u8 = switch (item.*.IfType) {
                     c.IF_TYPE_IEEE80211 => 30,
                     c.IF_TYPE_ETHERNET_CSMACD => 20,
-                    else => continue
+                    else => continue,
                 };
 
                 if (score <= best_score) continue;
 
-                for ([_]c.PWCHAR { item.*.Description, item.*.FriendlyName }) |text| {
+                for ([_]c.PWCHAR{ item.*.Description, item.*.FriendlyName }) |text| {
                     if (text == null) continue;
                     for (virtual_adapter_words) |word| {
                         var start: usize = 0;
@@ -375,17 +473,12 @@ pub const AppConfig = struct {
                 }
             }
         }
-
         else {
             @compileError("Function local_ipv4() supports only macOS, Linux, and Windows.");
         }
 
         const bytes = best orelse return error.NoIpv4Address;
-        return std.fmt.allocPrint(
-            allocator,
-            "{d}.{d}.{d}.{d}",
-            .{ bytes[0], bytes[1], bytes[2], bytes[3] }
-        );
+        return std.fmt.allocPrint(allocator, "{d}.{d}.{d}.{d}", .{ bytes[0], bytes[1], bytes[2], bytes[3] });
     }
 };
 
@@ -413,7 +506,7 @@ pub const AppState = struct {
             .status_mkdir => self.status_mkdir,
             .status_copy => self.status_copy,
             .status_move => self.status_move,
-            .status_rename => self.status_rename
+            .status_rename => self.status_rename,
         };
     }
 
@@ -426,7 +519,7 @@ pub const AppState = struct {
             .status_mkdir => self.status_mkdir = enabled,
             .status_copy => self.status_copy = enabled,
             .status_move => self.status_move = enabled,
-            .status_rename => self.status_rename = enabled
+            .status_rename => self.status_rename = enabled,
         }
     }
 
@@ -447,6 +540,7 @@ pub const AppState = struct {
 
 pub const WatchHub = struct {
     mutex: std.Io.Mutex = .init,
+    idle: std.Io.Condition = .init,
     id: u64 = 0,
     listeners: std.ArrayList(Listener) = .empty,
     stopping: bool = false,
@@ -456,34 +550,63 @@ pub const WatchHub = struct {
         defer self.mutex.unlock(io);
         const id = self.id;
         self.id = self.id + 1;
-        try self.listeners.append(
-            gpa,
-            .{ .id = id, .ctx = ctx, .callback = callback }
-        );
+        try self.listeners.append(gpa, .{ .id = id, .ctx = ctx, .callback = callback });
         return id;
     }
 
     pub fn unsubscribe(self: *WatchHub, io: std.Io, id: u64) void {
         self.mutex.lockUncancelable(io);
         defer self.mutex.unlock(io);
-        for (self.listeners.items, 0..) |listener, i| if (listener.id == id) {
+        for (self.listeners.items, 0 .. ) |listener, i| if (listener.id == id) {
+            self.listeners.items[i].removing = true;
+            while (self.listeners.items[i].active_callbacks != 0) self.idle.waitUncancelable(io, &self.mutex);
             _ = self.listeners.swapRemove(i);
             return;
         };
     }
 
-    pub fn broadcast(self: *WatchHub, io: std.Io, msg: []const u8) void {
+    pub fn broadcast(self: *WatchHub, io: std.Io, allocator: std.mem.Allocator, msg: []const u8) void {
         self.mutex.lockUncancelable(io);
-        defer self.mutex.unlock(io);
-        var i: usize = 0;
-        while (i < self.listeners.items.len) {
-            const listener = self.listeners.items[i];
-            listener.callback(listener.ctx, msg) catch {
-                _ = self.listeners.swapRemove(i);
+        var ids = std.ArrayList(u64).initCapacity(allocator, self.listeners.items.len) catch {
+            self.mutex.unlock(io);
+            return;
+        };
+        defer ids.deinit(allocator);
+        for (self.listeners.items) |listener| ids.appendAssumeCapacity(listener.id);
+        self.mutex.unlock(io);
+
+        for (ids.items) |id| {
+            self.mutex.lockUncancelable(io);
+            const index = self.listener_index(id) orelse {
+                self.mutex.unlock(io);
                 continue;
             };
-            i = i + 1;
+            if (self.listeners.items[index].removing) {
+                self.mutex.unlock(io);
+                continue;
+            }
+            self.listeners.items[index].active_callbacks += 1;
+            const listener = self.listeners.items[index];
+            self.mutex.unlock(io);
+
+            const failed = blk: {
+                listener.callback(listener.ctx, msg) catch break :blk true;
+                break :blk false;
+            };
+
+            self.mutex.lockUncancelable(io);
+            const current_index = self.listener_index(id) orelse unreachable;
+            const current = &self.listeners.items[current_index];
+            current.active_callbacks -= 1;
+            if (current.active_callbacks == 0) self.idle.broadcast(io);
+            if (failed and !current.removing) _ = self.listeners.swapRemove(current_index);
+            self.mutex.unlock(io);
         }
+    }
+
+    fn listener_index(self: *WatchHub, id: u64) ?usize {
+        for (self.listeners.items, 0 .. ) |listener, i| if (listener.id == id) return i;
+        return null;
     }
 
     pub fn stop(self: *WatchHub, io: std.Io) void {
@@ -512,12 +635,7 @@ pub const WatchClient = struct {
     connect: *httpz.websocket.Conn,
 
     pub fn init(connect: *httpz.websocket.Conn, ctx: *const WatchContext) !WatchClient {
-        return .{
-            .id = 0,
-            .io = ctx.io,
-            .hub = ctx.hub,
-            .connect = connect
-        };
+        return .{ .id = 0, .io = ctx.io, .hub = ctx.hub, .connect = connect };
     }
 
     pub fn afterInit(self: *WatchClient, ctx: *const WatchContext) !void {
@@ -554,14 +672,7 @@ pub const Handler = struct {
     pub fn uncaughtError(_: *Handler, request: *httpz.Request, response: *httpz.Response, err: anyerror) void {
         response.status = 500;
         response.body = "[HTTP 500] internal server error";
-        response.header(
-            "error",
-            std.fmt.allocPrint(
-                response.arena,
-                "[error] {s} -> {s}",
-                .{ request.url.path, @errorName(err) }
-            ) catch "[error] failed to format error"
-        );
+        response.header("error", std.fmt.allocPrint(response.arena, "[error] {s} -> {s}", .{ request.url.path, @errorName(err) }) catch "[error] failed to format error");
         response.header("state", "500");
     }
 };
@@ -576,7 +687,7 @@ pub const SlidingWindowMultipartStreamParser = struct {
     pub fn fill_at_least(self: *SlidingWindowMultipartStreamParser, want: usize) ![]const u8 {
         if (want > self.buffer.len) return error.StreamParserBufferTooSmall;
         while (self.length < want and !self.eof) {
-            const n = try self.reader.read(self.buffer[self.length..]);
+            const n = try self.reader.read(self.buffer[self.length .. ]);
             if (n == 0) {
                 self.eof = true;
                 break;
@@ -609,7 +720,7 @@ pub const SlidingWindowMultipartStreamParser = struct {
                 .none => {
                     self.advance(self.flushable_prefix_len(needle));
                     if (self.eof) return error.NoBoundary;
-                }
+                },
             }
         }
     }
@@ -638,7 +749,7 @@ pub const SlidingWindowMultipartStreamParser = struct {
                     try self.write_prefix(w, count);
                     written = written + count;
                     if (self.eof) return error.UnexpectedEof;
-                }
+                },
             }
         }
     }
@@ -660,7 +771,7 @@ pub const SlidingWindowMultipartStreamParser = struct {
                 .none => {
                     try self.collect_prefix(dst, &written, self.flushable_prefix_len(needle), error.FormFieldTooLarge);
                     if (self.eof) return error.UnexpectedEof;
-                }
+                },
             }
         }
     }
@@ -702,7 +813,7 @@ pub const SlidingWindowMultipartStreamParser = struct {
             if (self.length < required and !self.eof and required <= self.buffer.len) {
                 _ = self.fill_at_least(required) catch |err| switch (err) {
                     error.EndOfStream => self.buffer[0 .. self.length],
-                    else => return err
+                    else => return err,
                 };
             }
             if (self.length >= required) {
@@ -719,7 +830,7 @@ pub const SlidingWindowMultipartStreamParser = struct {
     fn fill_for_search(self: *SlidingWindowMultipartStreamParser, want: usize, end_error: anyerror) ![]const u8 {
         return self.fill_at_least(want) catch |err| switch (err) {
             error.EndOfStream => return end_error,
-            else => return err
+            else => return err,
         };
     }
 
@@ -747,13 +858,7 @@ pub const ChunkingWriter = struct {
     interface: std.Io.Writer,
 
     pub fn init(response: *httpz.Response, buffer: []u8) ChunkingWriter {
-        return .{
-            .response = response,
-            .interface = .{
-                .buffer = buffer,
-                .vtable = &.{ .drain = drain }
-            }
-        };
+        return .{ .response = response, .interface = .{ .buffer = buffer, .vtable = &.{ .drain = drain } } };
     }
 
     fn drain(w: *std.Io.Writer, data: []const []const u8, splat: usize) std.Io.Writer.Error!usize {
@@ -812,14 +917,7 @@ pub const ZipWriter = struct {
         var components = std.mem.tokenizeAny(u8, relative_path, separators);
         var component = components.next() orelse return error.InvalidPath;
         while (components.next()) |next| {
-            const child = try current.openDir(
-                io,
-                component,
-                .{
-                    .iterate = false,
-                    .follow_symlinks = false
-                }
-            );
+            const child = try current.openDir(io, component, .{ .iterate = false, .follow_symlinks = false });
             if (current_is_owned) current.close(io);
             current = child;
             current_is_owned = true;
@@ -829,32 +927,18 @@ pub const ZipWriter = struct {
         const stat = try current.statFile(io, component, .{ .follow_symlinks = false });
         switch (stat.kind) {
             .directory => {
-                var dir = try current.openDir(
-                    io,
-                    component,
-                    .{
-                        .iterate = true,
-                        .follow_symlinks = false
-                    }
-                );
+                var dir = try current.openDir(io, component, .{ .iterate = true, .follow_symlinks = false });
                 defer dir.close(io);
                 try self.add_directory_tree(io, allocator, dir, normalized_base);
             },
             .file => {
-                const file = try current.openFile(
-                    io,
-                    component,
-                    .{
-                        .follow_symlinks = false,
-                        .resolve_beneath = true
-                    }
-                );
+                const file = try current.openFile(io, component, .{ .follow_symlinks = false, .resolve_beneath = true });
                 defer file.close(io);
                 const archive_name = if (normalized_base.len == 0) component else normalized_base;
                 try self.add_regular_file(io, allocator, file, archive_name);
             },
             .sym_link => return error.SymbolicLinkNotAllowed,
-            else => return error.UnsupportedFileType
+            else => return error.UnsupportedFileType,
         }
     }
 
@@ -940,13 +1024,12 @@ pub const ZipWriter = struct {
             std.mem.writeInt(u16, extra[2 .. 4], zip64_data_len, .little);
             var index: usize = 4;
             if (needs_zip64_size) {
-                std.mem.writeInt(u64, extra[index..][0 .. 8], entry.size, .little);
-                index = index + 8;
-                std.mem.writeInt(u64, extra[index..][0 .. 8], entry.size, .little);
-                index = index + 8;
+                std.mem.writeInt(u64, extra[index .. ][0 .. 8], entry.size, .little);
+                std.mem.writeInt(u64, extra[index + 8 .. ][0 .. 8], entry.size, .little);
+                index = index + 16;
             }
             if (needs_zip64_offset) {
-                std.mem.writeInt(u64, extra[index..][0 .. 8], entry.offset, .little);
+                std.mem.writeInt(u64, extra[index .. ][0 .. 8], entry.offset, .little);
                 index = index + 8;
             }
             try self.write_bytes(extra[0 .. index]);
@@ -969,31 +1052,17 @@ pub const ZipWriter = struct {
 
             switch (kind) {
                 .directory => {
-                    var child_dir = try dir.openDir(
-                        io,
-                        entry.name,
-                        .{
-                            .iterate = true,
-                            .follow_symlinks = false
-                        }
-                    );
+                    var child_dir = try dir.openDir(io, entry.name, .{ .iterate = true, .follow_symlinks = false });
                     defer child_dir.close(io);
                     try self.add_directory_tree(io, allocator, child_dir, child_in_zip);
                 },
                 .file => {
-                    const file = try dir.openFile(
-                        io,
-                        entry.name,
-                        .{
-                            .follow_symlinks = false,
-                            .resolve_beneath = true
-                        }
-                    );
+                    const file = try dir.openFile(io, entry.name, .{ .follow_symlinks = false, .resolve_beneath = true });
                     defer file.close(io);
                     try self.add_regular_file(io, allocator, file, child_in_zip);
                 },
                 .sym_link => return error.SymbolicLinkNotAllowed,
-                else => return error.UnsupportedFileType
+                else => return error.UnsupportedFileType,
             }
         }
     }
@@ -1005,15 +1074,7 @@ pub const ZipWriter = struct {
 
         const start_offset = self.offset;
         try self.write_local_header(name, 0, false);
-        self.entries.appendAssumeCapacity(
-            .{
-                .name = name,
-                .crc = 0,
-                .size = 0,
-                .offset = start_offset,
-                .is_directory = true
-            }
-        );
+        self.entries.appendAssumeCapacity(.{ .name = name, .crc = 0, .size = 0, .offset = start_offset, .is_directory = true });
     }
 
     fn add_regular_file(self: *ZipWriter, io: std.Io, allocator: std.mem.Allocator, file: std.Io.File, raw_name: []const u8) !void {
@@ -1110,7 +1171,7 @@ pub const ZipWriter = struct {
         return switch (self.state) {
             .status_writing => {},
             .status_finished => error.ZipWriterAlreadyFinished,
-            .status_failed => error.ZipWriterFailed
+            .status_failed => error.ZipWriterFailed,
         };
     }
 

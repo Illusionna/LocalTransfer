@@ -443,18 +443,24 @@ socket.onmessage = event =&gt; {
 
                 <section id="search">
                     <h2><span class="method post">POST</span>/api/search-file/</h2>
-                    <p>在选定文件或目录中搜索名称及可识别的文本内容。返回路径相对于 <code>CurrentDir</code>。</p>
+                    <p>在选定文件或目录中搜索名称及可识别的文本内容。返回路径相对于 <code>CurrentDir</code>。搜索受服务器端深度、文件数、读取量和 3 秒时限保护。</p>
                     <pre><code>curl -b cookie.txt \
   -H "Content-Type: application/json" \
   -d '{
     "Path":["docs","src/main.zig"],
     "Target":"router",
-    "CurrentDir":"."
+    "CurrentDir":".",
+    "Limit":50,
+    "Offset":0
   }' \
   http://localhost:8888/api/search-file/</code></pre>
-                    <pre><code>[
-  {"Path":"src/main.zig","Description":"var router = try server.router(.{});"}
-]</code></pre>
+                    <pre><code>{
+  "Results":[{"Path":"src/main.zig","Description":"var router = try server.router(.{});"}],
+  "NextOffset":null,
+  "Truncated":false,
+  "ScannedFiles":42
+}</code></pre>
+                    <p>使用 <code>NextOffset</code> 作为下一次请求的 <code>Offset</code> 获取下一页；<code>Truncated</code> 为 <code>true</code> 时表示已达到扫描预算，需缩小范围或关键字后重试。</p>
                 </section>
 
                 <section id="delete">

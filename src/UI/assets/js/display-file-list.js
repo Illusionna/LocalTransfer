@@ -34,6 +34,17 @@ function SyncVisibleSelections() {
 }
 
 
+function ClearFileSelections() {
+    SELECTED_FILE_PATHS.clear();
+    document.querySelectorAll('.file-item input[type="checkbox"]').forEach(checkbox => {
+        checkbox.checked = false;
+    });
+    if (typeof RefreshSelectAllCheckboxStatus === 'function') {
+        RefreshSelectAllCheckboxStatus();
+    }
+}
+
+
 async function UpdateFileList(path) {
     const update_id = ++FILE_LIST_UPDATE_ID;
     const response = await fetch(`/api/file-list/?path=${encodeURIComponent(path)}`);

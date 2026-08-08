@@ -26,21 +26,17 @@ pub fn upload_request_limit(cfg: *const class.AppConfig) usize {
 pub fn format_time(allocator: std.mem.Allocator, time: std.Io.Timestamp) ![]u8 {
     const seconds = local_second(time.toSeconds());
     const ymdhms = UTC_to_YMDHMS(seconds);
-    return std.fmt.allocPrint(
-        allocator,
-        "{d:0>4}-{d:0>2}-{d:0>2} {d:0>2}:{d:0>2}:{d:0>2}",
-        .{ ymdhms.year, ymdhms.month, ymdhms.day, ymdhms.hour, ymdhms.minute, ymdhms.second }
-    );
+    return std.fmt.allocPrint(allocator, "{d:0>4}-{d:0>2}-{d:0>2} {d:0>2}:{d:0>2}:{d:0>2}", .{ ymdhms.year, ymdhms.month, ymdhms.day, ymdhms.hour, ymdhms.minute, ymdhms.second });
 }
 
 
 pub fn write_file_size(w: *std.Io.Writer, n: i64) !void {
-    if (n < 1024) return w.print("{d} B", .{ n });
+    if (n < 1024) return w.print("{d} B", .{n});
     const f = @as(f64, @floatFromInt(n));
-    if (n < 1 << 20) return w.print("{d:.2} KB", .{ f / 1024.0 });
-    if (n < 1 << 30) return w.print("{d:.2} MB", .{ f / (1024.0 * 1024.0) });
-    if (n < 1 << 40) return w.print("{d:.2} GB", .{ f / (1024.0 * 1024.0 * 1024.0) });
-    return w.print("{d:.2} TB", .{ f / (1024.0 * 1024.0 * 1024.0 * 1024.0) });
+    if (n < 1 << 20) return w.print("{d:.2} KB", .{f / 1024.0});
+    if (n < 1 << 30) return w.print("{d:.2} MB", .{f / (1024.0 * 1024.0)});
+    if (n < 1 << 40) return w.print("{d:.2} GB", .{f / (1024.0 * 1024.0 * 1024.0)});
+    return w.print("{d:.2} TB", .{f / (1024.0 * 1024.0 * 1024.0 * 1024.0)});
 }
 
 
@@ -81,7 +77,47 @@ pub fn access_super(path: []const u8) bool {
 
 
 pub fn access_item(path: []const u8) bool {
-    return access_super(path) and !std.mem.eql(u8, path, ".");
+    return access_super(path) and !std.mem.eql(u8, path, ".") and !is_internal_temporary_path(path);
+}
+
+
+pub fn is_internal_temporary_name(name: []const u8) bool {
+    if (std.mem.startsWith(u8, name, ".upload.") and std.mem.endsWith(u8, name, ".tmp")) {
+        const token = name[8 .. (name.len - 4)];
+        var fields = std.mem.splitScalar(u8, token, '.');
+        var count: usize = 0;
+        while (fields.next()) |field| {
+            if (field.len == 0) return false;
+            for (field) |byte| if (!std.ascii.isDigit(byte)) return false;
+            count = count + 1;
+        }
+        return count == 3;
+    }
+    if (std.mem.startsWith(u8, name, ".download.") and std.mem.endsWith(u8, name, ".zip")) {
+        const token = name[10 .. (name.len - 4)];
+        if (token.len != 32) return false;
+        for (token) |byte| if (!std.ascii.isHex(byte)) return false;
+        return true;
+    }
+    if (std.mem.startsWith(u8, name, ".rename.") and std.mem.endsWith(u8, name, ".tmp")) {
+        const token_and_index = name[8 .. (name.len - 4)];
+        const separator = std.mem.lastIndexOfScalar(u8, token_and_index, '.') orelse return false;
+        const token = token_and_index[0 .. separator];
+        const index = token_and_index[(separator + 1) .. ];
+        if (token.len != 32 or index.len == 0) return false;
+        for (token) |byte| if (!std.ascii.isHex(byte)) return false;
+        for (index) |byte| if (!std.ascii.isDigit(byte)) return false;
+        return true;
+    }
+    return false;
+}
+
+
+pub fn is_internal_temporary_path(path: []const u8) bool {
+    const separators = if (builtin.os.tag == .windows) "/\\" else "/";
+    var components = std.mem.tokenizeAny(u8, path, separators);
+    while (components.next()) |component| if (is_internal_temporary_name(component)) return true;
+    return false;
 }
 
 
@@ -116,6 +152,13 @@ pub fn open_confined_dir(io: std.Io, share_dir: []const u8, path: []const u8, it
     var parent = try open_confined_parent(io, share_dir, path);
     defer parent.close(io);
     return parent.dir.openDir(io, parent.leaf, .{ .iterate = iterate, .follow_symlinks = false });
+}
+
+
+pub fn open_confined_file(io: std.Io, share_dir: []const u8, path: []const u8) !std.Io.File {
+    var parent = try open_confined_parent(io, share_dir, path);
+    defer parent.close(io);
+    return parent.dir.openFile(io, parent.leaf, .{ .follow_symlinks = false, .resolve_beneath = true });
 }
 
 
@@ -164,7 +207,7 @@ pub fn make_confined_dir_path(io: std.Io, allocator: std.mem.Allocator, share_di
         root = next;
     }
     if (!missing) return true;
-    const full = join_path(allocator, share_dir, &.{ path }) catch return false;
+    const full = join_path(allocator, share_dir, &.{path}) catch return false;
     defer allocator.free(full);
     std.Io.Dir.cwd().createDirPath(io, full) catch return false;
     return confined_path(io, share_dir, path, false);
@@ -190,19 +233,13 @@ pub fn parse_flags(args: [][:0]const u8, cfg: *class.AppConfig, state: *class.Ap
         if (i + 1 >= args.len) return false;
 
         const v = args[i + 1];
-        if (std.mem.eql(u8, arg, "--ip") or std.mem.eql(u8, arg, "-ip")) cfg.host_ipv4 = v
-        else if (std.mem.eql(u8, arg, "--port") or std.mem.eql(u8, arg, "-port")) cfg.host_port = v
-        else if (std.mem.eql(u8, arg, "--share") or std.mem.eql(u8, arg, "-share")) {
+        if (std.mem.eql(u8, arg, "--ip") or std.mem.eql(u8, arg, "-ip")) cfg.host_ipv4 = v else if (std.mem.eql(u8, arg, "--port") or std.mem.eql(u8, arg, "-port")) cfg.host_port = v else if (std.mem.eql(u8, arg, "--share") or std.mem.eql(u8, arg, "-share")) {
             cfg.share_dir = v;
             cfg.store_dir = v;
         }
-        else if (std.mem.eql(u8, arg, "--store") or std.mem.eql(u8, arg, "-store")) cfg.store_dir = v
-        else if (std.mem.eql(u8, arg, "--max") or std.mem.eql(u8, arg, "-max")) cfg.limit_max = v
-        else if (std.mem.eql(u8, arg, "--login") or std.mem.eql(u8, arg, "-login")) cfg.login_pwd = v
-        else if (std.mem.eql(u8, arg, "--button") or std.mem.eql(u8, arg, "-button")) {
+        else if (std.mem.eql(u8, arg, "--store") or std.mem.eql(u8, arg, "-store")) cfg.store_dir = v else if (std.mem.eql(u8, arg, "--max") or std.mem.eql(u8, arg, "-max")) cfg.limit_max = v else if (std.mem.eql(u8, arg, "--login") or std.mem.eql(u8, arg, "-login")) cfg.login_pwd = v else if (std.mem.eql(u8, arg, "--button") or std.mem.eql(u8, arg, "-button")) {
             if (!parse_button_flags(v, state)) return false;
-        }
-        else return false;
+        } else return false;
     }
     return true;
 }
@@ -216,6 +253,7 @@ pub fn dir_hash(io: std.Io, allocator: std.mem.Allocator, dir: []const u8) u64 {
     defer walker.deinit();
 
     while (walker.next(io) catch null) |entry| {
+        if (is_internal_temporary_path(entry.path)) continue;
         hasher.update(entry.path);
         if (entry.kind == .directory) {
             hasher.update("/");
@@ -275,9 +313,7 @@ pub fn wait_for_sigint(io: std.Io, set: *const class.SigintSet) void {
 }
 
 
-pub fn folder_size_count(io: std.Io, allocator: std.mem.Allocator, path: []const u8) !class.FileSizeCount {
-    var dir = std.Io.Dir.cwd().openDir(io, path, .{ .iterate = true }) catch return .{ .size = 0, .count = 0 };
-    defer dir.close(io);
+pub fn folder_size_count(io: std.Io, allocator: std.mem.Allocator, dir: std.Io.Dir) !class.FileSizeCount {
     var walker = try dir.walk(allocator);
     defer walker.deinit();
 
@@ -285,7 +321,7 @@ pub fn folder_size_count(io: std.Io, allocator: std.mem.Allocator, path: []const
     var total_count: i64 = 0;
     while (try walker.next(io)) |entry| {
         if (entry.kind == .directory or entry.kind == .sym_link) continue;
-        const child = entry.dir.openFile(io, entry.basename, .{}) catch continue;
+        const child = entry.dir.openFile(io, entry.basename, .{ .follow_symlinks = false, .resolve_beneath = true }) catch continue;
         const stat = child.stat(io) catch {
             child.close(io);
             continue;
@@ -305,21 +341,7 @@ pub fn ago_time(io: std.Io, allocator: std.mem.Allocator, time: std.Io.Timestamp
     const ymdhms = UTC_to_YMDHMS(local_second(seconds));
     const weekday = zeller_weekday(@as(i32, ymdhms.year), @as(i32, ymdhms.month), @as(i32, ymdhms.day));
 
-    const buckets = [_]class.ChineseTime{
-        .{ .interval = 60, .label = "刚刚" },
-        .{ .interval = 180, .label = "一分钟前" },
-        .{ .interval = 900, .label = "三分钟前" },
-        .{ .interval = 1800, .label = "一刻钟前" },
-        .{ .interval = 3600, .label = "半小时前" },
-        .{ .interval = 7200, .label = "一小时前" },
-        .{ .interval = 43200, .label = "一个时辰前" },
-        .{ .interval = 86400, .label = "半天前" },
-        .{ .interval = 172800, .label = "一天前" },
-        .{ .interval = 259200, .label = "两天前" },
-        .{ .interval = 604800, .label = "三天前" },
-        .{ .interval = 1296000, .label = "一周前" },
-        .{ .interval = 2592000, .label = "半个月前" }
-    };
+    const buckets = [_]class.ChineseTime{ .{ .interval = 60, .label = "刚刚" }, .{ .interval = 180, .label = "一分钟前" }, .{ .interval = 900, .label = "三分钟前" }, .{ .interval = 1800, .label = "一刻钟前" }, .{ .interval = 3600, .label = "半小时前" }, .{ .interval = 7200, .label = "一小时前" }, .{ .interval = 43200, .label = "一个时辰前" }, .{ .interval = 86400, .label = "半天前" }, .{ .interval = 172800, .label = "一天前" }, .{ .interval = 259200, .label = "两天前" }, .{ .interval = 604800, .label = "三天前" }, .{ .interval = 1296000, .label = "一周前" }, .{ .interval = 2592000, .label = "半个月前" } };
     for (buckets) |b| if (diff < b.interval) {
         return std.fmt.allocPrint(allocator, "{s}（{s}）", .{ b.label, weekday });
     };
@@ -464,10 +486,10 @@ pub fn is_text_candidate(path: []const u8) bool {
 
 pub fn is_textual_mime(mime: []const u8) bool {
     return std.mem.startsWith(u8, mime, "text/") or
-           std.mem.startsWith(u8, mime, "application/javascript") or
-           std.mem.startsWith(u8, mime, "application/json") or
-           std.mem.startsWith(u8, mime, "application/xml") or
-           std.mem.startsWith(u8, mime, "image/svg+xml");
+        std.mem.startsWith(u8, mime, "application/javascript") or
+        std.mem.startsWith(u8, mime, "application/json") or
+        std.mem.startsWith(u8, mime, "application/xml") or
+        std.mem.startsWith(u8, mime, "image/svg+xml");
 }
 
 
@@ -484,15 +506,19 @@ pub fn relative_search_path(current_dir: []const u8, path: []const u8) ?[]const 
     if (current_dir.len == 0 or std.mem.eql(u8, current_dir, ".")) return path;
     if (!std.mem.startsWith(u8, path, current_dir)) return null;
     if (path.len <= current_dir.len or path[current_dir.len] != std.fs.path.sep) return null;
-    return path[current_dir.len + 1..];
+    return path[current_dir.len + 1 .. ];
 }
 
 
-pub fn find_matching_text_snippet(io: std.Io, allocator: std.mem.Allocator, path: []const u8, target: []const u8) !?[]u8 {
-    if (!is_text_candidate(path)) return null;
-    if (!file_starts_as_plain_text(io, path)) return null;
-    const content = std.Io.Dir.cwd().readFileAlloc(io, path, allocator, .limited(16 * 1024 * 1024)) catch return null;
-    defer allocator.free(content);
+pub fn find_matching_text_snippet(io: std.Io, read_allocator: std.mem.Allocator, result_allocator: std.mem.Allocator, dir: std.Io.Dir, name: []const u8, target: []const u8, max_read_bytes: usize) !?[]u8 {
+    if (!is_text_candidate(name)) return null;
+    if (!file_starts_as_plain_text(io, dir, name)) return null;
+    const file = dir.openFile(io, name, .{ .follow_symlinks = false, .resolve_beneath = true }) catch return null;
+    defer file.close(io);
+    var buffer: [8 * 1024]u8 = undefined;
+    var reader = file.reader(io, &buffer);
+    const content = reader.interface.allocRemaining(read_allocator, .limited(max_read_bytes)) catch return null;
+    defer read_allocator.free(content);
     if (!is_probably_plain_text(content, true)) return null;
 
     const match_index = std.ascii.indexOfIgnoreCase(content, target) orelse return null;
@@ -504,12 +530,12 @@ pub fn find_matching_text_snippet(io: std.Io, allocator: std.mem.Allocator, path
     var snippet_end = @min(line_end, match_index + target.len + 200);
     while (snippet_end > match_index + target.len and snippet_end < content.len and content[snippet_end] & 0xc0 == 0x80) snippet_end = snippet_end - 1;
     const snippet = std.mem.trim(u8, content[snippet_start .. snippet_end], " \t\r");
-    return try allocator.dupe(u8, snippet);
+    return try result_allocator.dupe(u8, snippet);
 }
 
 
-fn file_starts_as_plain_text(io: std.Io, path: []const u8) bool {
-    const file = std.Io.Dir.cwd().openFile(io, path, .{}) catch return false;
+fn file_starts_as_plain_text(io: std.Io, dir: std.Io.Dir, name: []const u8) bool {
+    const file = dir.openFile(io, name, .{ .follow_symlinks = false, .resolve_beneath = true }) catch return false;
     defer file.close(io);
 
     var reader_buffer: [8 * 1024]u8 = undefined;
@@ -534,7 +560,8 @@ fn zeller_weekday(year: i32, month: i32, day: i32) []const u8 {
         m = month;
         y = @mod(year, 100);
         c = @divTrunc(year, 100);
-    } else {
+    }
+    else {
         m = month + 12;
         y = @mod(year - 1, 100);
         c = @divTrunc(year - 1, 100);
@@ -552,14 +579,7 @@ fn UTC_to_YMDHMS(seconds: i64) class.StdTimeFormat {
     const ds = es.getDaySeconds();
     const yd = ed.calculateYearDay();
     const md = yd.calculateMonthDay();
-    return .{
-        .year = @intCast(yd.year),
-        .month = @intFromEnum(md.month),
-        .day = @as(u5, @intCast(@as(u6, md.day_index) + 1)),
-        .hour = ds.getHoursIntoDay(),
-        .minute = ds.getMinutesIntoHour(),
-        .second = ds.getSecondsIntoMinute()
-    };
+    return .{ .year = @intCast(yd.year), .month = @intFromEnum(md.month), .day = @as(u5, @intCast(@as(u6, md.day_index) + 1)), .hour = ds.getHoursIntoDay(), .minute = ds.getMinutesIntoHour(), .second = ds.getSecondsIntoMinute() };
 }
 
 
@@ -578,7 +598,7 @@ fn next_path_component(path: []const u8, index: *usize) ?[]const u8 {
 
 fn web_option_from_name(name: []const u8) ?class.WebOption {
     inline for (std.meta.fields(class.WebOption)) |field| {
-        const option_name = if (std.mem.startsWith(u8, field.name, "status_")) field.name[7..] else field.name;
+        const option_name = if (std.mem.startsWith(u8, field.name, "status_")) field.name[7 .. ] else field.name;
         if (std.mem.eql(u8, name, option_name)) return @enumFromInt(field.value);
     }
     return null;

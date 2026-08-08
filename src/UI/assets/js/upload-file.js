@@ -36,15 +36,14 @@ function CreateUploadDialog() {
     const progress_bar = document.querySelector('.upload-progress-bar');
     const progress_text = document.querySelector('.upload-progress-text');
     let selected_upload_files = [];
+    let upload_in_progress = false;
 
     function HandleUploadFile(files) {
-        selected_upload_files = Array.from(files);
-        selected_upload_files.forEach(file => {
-            if (!file.filepath) {
-                const full_path = file.webkitRelativePath || file.name;
-                file.filepath = full_path;
-            }
-        });
+        selected_upload_files = Array.from(files).map(item => {
+            if (item.file && item.path) return item;
+            return { file: item, path: item.webkitRelativePath || item.name };
+        }).filter(item => item.path);
+        drop_zone_file.value = '';
         drop_zone_upload_button.querySelector('span').style.whiteSpace = 'nowrap';
         drop_zone_upload_button.querySelector('span').textContent = `待上传 ${selected_upload_files.length} 个文件.`;
     }
@@ -91,8 +90,7 @@ function CreateUploadDialog() {
     async function TraverseDirectoryTree(entry, path='') {
         if (entry.isFile) {
             const file = await ReadEntryFile(entry);
-            file.filepath = path + file.name;
-            return [file];
+            return [{ file: file, path: path + file.name }];
         }
 
         if (entry.isDirectory) {
@@ -122,96 +120,98 @@ function CreateUploadDialog() {
     });
 
     document.querySelector('.upload-dialog-cancel').addEventListener('click', () => {
+        if (upload_in_progress) return;
         upload_dialog.style.display = 'none';
     });
 
     document.querySelector('.upload-dialog-ok').addEventListener('click', async () => {
+        if (upload_in_progress) return;
         if (selected_upload_files.length === 0) {
             alert('请上传文件😊');
             return;
         }
 
-        const form_data = new FormData();
-        form_data.append('CurrentDir', CURRENT_DIR);
-        selected_upload_files.forEach((file) => {
-            if (file.filepath) {
-                form_data.append('RelativePath', file.filepath);
-                form_data.append('File', file);
-            }
-        });
-
+        const ok_button = document.querySelector('.upload-dialog-ok');
+        const cancel_button = document.querySelector('.upload-dialog-cancel');
+        const upload_dir = CURRENT_DIR;
+        const total_size = selected_upload_files.reduce((sum, item) => sum + item.file.size, 0);
+        let completed_size = 0;
+        const failures = [];
+        upload_in_progress = true;
         try {
-            // 显示进度条和文本
             progress_container.style.display = 'block';
             progress_text.style.display = 'block';
-        
-            // 禁用按钮
-            document.querySelector('.upload-dialog-ok').disabled = true;
-            document.querySelector('.upload-dialog-cancel').disabled = true;
-        
-            const xhr = new XMLHttpRequest();
-        
-            // 进度监听
-            xhr.upload.addEventListener('progress', (event) => {
-                if (event.lengthComputable) {
-                    const percentComplete = Math.round((event.loaded / event.total) * 100);
-                    progress_bar.style.width = percentComplete + '%';
-                    progress_bar.textContent = percentComplete + '%';
-                    progress_text.textContent = `已上传 ${FormatFileSize(event.loaded)} / ${FormatFileSize(event.total)}`;
-                }
-            });
-        
-            // 错误处理
-            xhr.onerror = function () {
-                alert("上传失败：网络错误，请检查网络连接或尝试上传更小的文件。");
-                upload_dialog.style.display = 'none';
-                document.querySelector('.upload-dialog-ok').disabled = false;
-                document.querySelector('.upload-dialog-cancel').disabled = false;
-            };
+            progress_bar.style.width = '0%';
+            progress_bar.textContent = '0%';
+            ok_button.disabled = true;
+            cancel_button.disabled = true;
 
-            // 请求完成处理
-            xhr.onload = function () {
-                const results = (() => {
-                    try {
-                        return JSON.parse(xhr.responseText);
-                    } catch (_) {
-                        return [];
-                    }
-                })();
-                const failures = Array.isArray(results) ? results.filter(result => !result.Success) : [];
-                if (xhr.status == 200) {
-                    UpdateFileList(CURRENT_DIR);
-                    progress_text.textContent = '成功';
-                    document.querySelector('.upload-dialog-ok').disabled = false;
-                    document.querySelector('.upload-dialog-cancel').disabled = false;
-                } else if (xhr.status == 207 || xhr.status == 409) {
-                    UpdateFileList(CURRENT_DIR);
-                    alert(`上传未全部成功：\n${failures.map(result => `${result.Path}: ${result.Error}`).join('\n')}`);
-                    upload_dialog.style.display = 'none';
-                } else if (xhr.status == 413) {
-                    alert(`上传失败，文件大小超出服务器预设的最大限制。`);
-                    upload_dialog.style.display = 'none';
-                } else if (xhr.status == 500) {
-                    alert(`上传失败，存在未知且无法解析的文件，建议一部分一部分上传，以找出错误文件。`);
-                    upload_dialog.style.display = 'none';
+            // The server limit is per request, so send one file at a time.
+            for (const item of selected_upload_files) {
+                const response = await UploadOneFile(item, upload_dir, (loaded) => {
+                    const current = completed_size + loaded;
+                    const percent = total_size === 0 ? 100 : Math.min(100, Math.round(current / total_size * 100));
+                    progress_bar.style.width = percent + '%';
+                    progress_bar.textContent = percent + '%';
+                    progress_text.textContent = `已上传 ${FormatFileSize(current)} / ${FormatFileSize(total_size)}`;
+                });
+                completed_size += item.file.size;
+
+                if (response.results.length > 0) {
+                    response.results.filter(result => !result.Success).forEach(result => failures.push(result));
                 } else {
-                    alert(`上传失败：服务器错误（状态码 ${xhr.status}）`);
-                    upload_dialog.style.display = 'none';
+                    failures.push({ Path: item.path, Error: response.message || `HTTP ${response.status}` });
                 }
+            }
+
+            progress_bar.style.width = '100%';
+            progress_bar.textContent = '100%';
+            progress_text.textContent = failures.length === 0 ? '上传成功' : '部分文件上传失败';
+            ClearFileSelections();
+            await UpdateFileList(CURRENT_DIR);
+            if (failures.length > 0) {
+                alert(`上传未全部成功：\n${failures.map(result => `${result.Path}: ${result.Error}`).join('\n')}`);
+            }
+            selected_upload_files = [];
+            upload_dialog.style.display = 'none';
+        } catch (error) {
+            progress_text.textContent = '上传失败，可以直接重试';
+            alert("上传文件异常：" + error.message);
+        } finally {
+            upload_in_progress = false;
+            ok_button.disabled = false;
+            cancel_button.disabled = false;
+        }
+    });
+
+    function UploadOneFile(item, upload_dir, on_progress) {
+        return new Promise((resolve, reject) => {
+            const form_data = new FormData();
+            form_data.append('CurrentDir', upload_dir);
+            form_data.append('RelativePath', item.path);
+            form_data.append('File', item.file, item.file.name);
+
+            const xhr = new XMLHttpRequest();
+            xhr.upload.addEventListener('progress', event => on_progress(event.loaded));
+            xhr.onerror = () => reject(new Error(`${item.path}: 网络连接中断`));
+            xhr.onabort = () => reject(new Error(`${item.path}: 上传已取消`));
+            xhr.onload = () => {
+                let results = [];
+                try {
+                    const parsed = JSON.parse(xhr.responseText);
+                    if (Array.isArray(parsed)) results = parsed;
+                } catch (_) {}
+                resolve({
+                    ok: xhr.status >= 200 && xhr.status < 300,
+                    status: xhr.status,
+                    results: results,
+                    message: results.length === 0 ? xhr.responseText : ''
+                });
             };
-        
-            // 发送请求
             xhr.open('POST', '/api/upload-file/', true);
             xhr.send(form_data);
-        } catch (error) {
-            // 捕获同步异常
-            alert("上传文件异常：" + error.message);
-            upload_dialog.style.display = 'none';
-            document.querySelector('.upload-dialog-ok').disabled = false;
-            document.querySelector('.upload-dialog-cancel').disabled = false;
-        }
-
-    });
+        });
+    }
 
     function FormatFileSize(bytes) {
         if (bytes === 0) return '0 Bytes';

@@ -9,11 +9,7 @@ const assets = @import("assets.zig");
 pub fn watch_handler(handler: *class.Handler, request: *httpz.Request, response: *httpz.Response) !void {
     if (!try is_authenticated_handler(handler, request, response)) return;
     const app = handler.app;
-    const ctx = class.WatchContext {
-        .hub = app.hub,
-        .gpa = app.gpa,
-        .io = app.io
-    };
+    const ctx = class.WatchContext{ .hub = app.hub, .gpa = app.gpa, .io = app.io };
     if (try httpz.upgradeWebsocket(class.WatchClient, request, response, &ctx) == false) {
         bad_request_handler(response, "[HTTP 400] invalid websocket upgrade");
     }
@@ -44,14 +40,7 @@ pub fn login_handler(handler: *class.Handler, request: *httpz.Request, response:
         try core.mark_authenticated(app.state, app.io, app.gpa, &session);
         response.status = 303;
         response.header("Location", "/");
-        response.header(
-            "Set-Cookie",
-            try std.fmt.allocPrint(
-                response.arena,
-                "ziger_session={s}; Path=/; HttpOnly; SameSite=Strict; Max-Age=1800",
-                .{ session }
-            )
-        );
+        response.header("Set-Cookie", try std.fmt.allocPrint(response.arena, "ziger_session={s}; Path=/; HttpOnly; SameSite=Strict; Max-Age=1800", .{session}));
         response.header("Cache-Control", "no-store");
         return;
     }
@@ -80,7 +69,7 @@ pub fn index_handler(handler: *class.Handler, request: *httpz.Request, response:
 
 pub fn ui_handler(handler: *class.Handler, request: *httpz.Request, response: *httpz.Response) !void {
     if (!try is_authenticated_handler(handler, request, response)) return;
-    const ui = utils.find_asset(request.url.path[1..]) orelse {
+    const ui = utils.find_asset(request.url.path[1 .. ]) orelse {
         response.status = 404;
         response.body = "[HTTP 404] file not found";
         return;
@@ -123,7 +112,7 @@ pub fn share_handler(handler: *class.Handler, request: *httpz.Request, response:
         response.status = 404;
         return;
     }
-    const path = try decode_url_path_handler(request.url.path[prefix.len..], response) orelse return;
+    const path = try decode_url_path_handler(request.url.path[prefix.len .. ], response) orelse return;
     if (!utils.access_item(path)) {
         bad_request_handler(response, "[HTTP 400] forbid accessing parent");
         return;
@@ -156,17 +145,13 @@ pub fn share_handler(handler: *class.Handler, request: *httpz.Request, response:
     var first_chunk: [64 * 1024]u8 = undefined;
     const first_chunk_len = try fr.interface.readSliceShort(&first_chunk);
 
-    const presentation = core.content_presentation(
-        path,
-        first_chunk[0 .. first_chunk_len],
-        first_chunk_len < first_chunk.len
-    );
+    const presentation = core.content_presentation(path, first_chunk[0 .. first_chunk_len], first_chunk_len < first_chunk.len);
 
     const disposition = if (presentation.should_inline) "inline" else "attachment";
     response.header("Content-Type", presentation.content_type);
     response.header("Content-Disposition", try std.fmt.allocPrint(response.arena, "{s}; filename=\"{s}\"", .{ disposition, std.fs.path.basename(path) }));
 
-    if (first_chunk_len > 0) try response.chunk(first_chunk[0..first_chunk_len]);
+    if (first_chunk_len > 0) try response.chunk(first_chunk[0 .. first_chunk_len]);
     var dst: [256 * 1024]u8 = undefined;
     while (true) {
         const n = try fr.interface.readSliceShort(&dst);
@@ -202,12 +187,7 @@ pub fn edit_handler(handler: *class.Handler, request: *httpz.Request, response: 
         bad_request_handler(response, "[HTTP 400] invalid request body");
         return;
     };
-    const upd = parse_json_handler(
-        struct { Content: []const u8 = "" },
-        request.arena,
-        body,
-        response
-    ) orelse return;
+    const upd = parse_json_handler(struct { Content: []const u8 = "" }, request.arena, body, response) orelse return;
 
     app.state.mutex.lockUncancelable(app.io);
     defer app.state.mutex.unlock(app.io);
@@ -264,7 +244,9 @@ pub fn search_handler(handler: *class.Handler, request: *httpz.Request, response
     if (!try require_option_handler(handler, request, response, .status_search)) return;
     const app = handler.app;
     const items = try request_json_handler(class.FileSearch, request, response) orelse return;
-    const results = try core.search_file(app.io, response.arena, app.cfg.share_dir, items);
+    app.state.file_mutex.lockUncancelable(app.io);
+    defer app.state.file_mutex.unlock(app.io);
+    const results = try core.search_file(app.io, response.arena, app.gpa, app.cfg.share_dir, items);
     response.header("Access-Control-Allow-Origin", "*");
     try response.json(results, .{});
 }
@@ -286,14 +268,12 @@ pub fn batch_download_handler(handler: *class.Handler, request: *httpz.Request, 
 
     const app = handler.app;
     const items = try request_json_handler([]const class.FileRequest, request, response) orelse return;
-    app.state.file_mutex.lockUncancelable(app.io);
-    defer app.state.file_mutex.unlock(app.io);
 
     var random: [16]u8 = undefined;
     app.io.random(&random);
     const token = std.fmt.bytesToHex(random, .lower);
-    const tmp_name = try std.fmt.allocPrint(response.arena, ".download.{s}.zip", .{ token });
-    const tmp_path = try utils.join_path(response.arena, app.cfg.store_dir, &.{ tmp_name });
+    const tmp_name = try std.fmt.allocPrint(response.arena, ".download.{s}.zip", .{token});
+    const tmp_path = try utils.join_path(response.arena, app.cfg.store_dir, &.{tmp_name});
     const cwd = std.Io.Dir.cwd();
     cwd.createDirPath(app.io, app.cfg.store_dir) catch {
         response.status = 500;
@@ -310,12 +290,19 @@ pub fn batch_download_handler(handler: *class.Handler, request: *httpz.Request, 
         defer archive_file.close(app.io);
         var write_buffer: [64 * 1024]u8 = undefined;
         var fw = archive_file.writer(app.io, &write_buffer);
+        app.state.file_mutex.lockUncancelable(app.io);
+        defer app.state.file_mutex.unlock(app.io);
         core.write_batch_archive(app.io, response.arena, app.cfg.share_dir, items, &fw.interface) catch |err| {
             response.status = switch (err) {
                 error.EmptySelection, error.UnsafePath, error.DuplicateArchiveName, error.SymbolicLinkNotAllowed, error.UnsupportedFileType, error.FileNotFound => 400,
-                else => 500
+                else => 500,
             };
             response.body = try std.fmt.allocPrint(response.arena, "[HTTP {d}] batch download failed: {s}", .{ response.status, @errorName(err) });
+            return;
+        };
+        fw.interface.flush() catch {
+            response.status = 500;
+            response.body = "[HTTP 500] fail to flush temporary archive";
             return;
         };
     }
@@ -329,7 +316,7 @@ pub fn batch_download_handler(handler: *class.Handler, request: *httpz.Request, 
     const stat = try file.stat(app.io);
     response.header("Content-Type", "application/zip");
     response.header("Content-Disposition", "attachment; filename=\"archive.zip\"");
-    response.header("Content-Length", try std.fmt.allocPrint(response.arena, "{d}", .{ stat.size }));
+    response.header("Content-Length", try std.fmt.allocPrint(response.arena, "{d}", .{stat.size}));
     response.header("Access-Control-Allow-Origin", "*");
 
     var reader_buffer: [64 * 1024]u8 = undefined;
@@ -352,7 +339,7 @@ pub fn makedir_handler(handler: *class.Handler, request: *httpz.Request, respons
     defer app.state.file_mutex.unlock(app.io);
     const result = try core.make_dir(app.io, response.arena, app.cfg.share_dir, items);
     if (!result.Success) response.status = if (std.mem.startsWith(u8, result.Error, "invalid")) 400 else if (std.mem.eql(u8, result.Error, "destination exists")) 409 else 500;
-    try response.json(&[_]class.FileOperationResult{ result }, .{});
+    try response.json(&[_]class.FileOperationResult{result}, .{});
 }
 
 
@@ -398,7 +385,8 @@ fn operation_results_handler(response: *httpz.Response, results: []const class.F
     var invalid: usize = 0;
     for (results) |result| if (result.Success) {
         succeeded = succeeded + 1;
-    } else if (std.mem.startsWith(u8, result.Error, "invalid")) {
+    }
+    else if (std.mem.startsWith(u8, result.Error, "invalid")) {
         invalid = invalid + 1;
     };
     if (succeeded != results.len) response.status = if (succeeded > 0) 207 else if (invalid == results.len) 400 else 409;
@@ -439,7 +427,7 @@ fn decode_url_path_handler(encoded: []const u8, response: *httpz.Response) !?[]c
         source = source + 3;
         destination = destination + 1;
     }
-    const path = decoded[0..destination];
+    const path = decoded[0 .. destination];
     if (!std.unicode.utf8ValidateSlice(path)) {
         bad_request_handler(response, "[HTTP 400] URL path is not valid UTF-8");
         return null;
@@ -471,10 +459,7 @@ fn request_json_handler(comptime T: type, request: *httpz.Request, response: *ht
 
 
 fn parse_json_handler(comptime T: type, allocator: std.mem.Allocator, body: ?[]const u8, response: *httpz.Response) ?T {
-    return (
-        if (body) |b| std.json.parseFromSliceLeaky(T, allocator, b, .{}) catch null
-        else null
-    ) orelse {
+    return (if (body) |b| std.json.parseFromSliceLeaky(T, allocator, b, .{}) catch null else null) orelse {
         bad_request_handler(response, "[HTTP 400] invalid request body");
         return null;
     };
@@ -511,14 +496,14 @@ fn user_of_handler(handler: *class.Handler, request: *httpz.Request) ![]u8 {
     while (fields.next()) |field_raw| {
         const field = std.mem.trim(u8, field_raw, " \t");
         const prefix = "ziger_session=";
-        if (std.mem.startsWith(u8, field, prefix)) return app.gpa.dupe(u8, field[prefix.len..]);
+        if (std.mem.startsWith(u8, field, prefix)) return app.gpa.dupe(u8, field[prefix.len .. ]);
     }
     return app.gpa.dupe(u8, "");
 }
 
 
 fn serve_assets_handler(request: *httpz.Request, response: *httpz.Response, ui: class.UI) !void {
-    const etag = try std.fmt.allocPrint(request.arena, "\"{s}\"", .{ ui.etag });
+    const etag = try std.fmt.allocPrint(request.arena, "\"{x:0>16}\"", .{std.hash.Wyhash.hash(0, ui.file)});
     if (request.header("if-none-match")) |inm| {
         if (std.mem.indexOf(u8, inm, etag) != null) {
             response.status = 304;
