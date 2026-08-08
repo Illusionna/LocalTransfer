@@ -27,9 +27,9 @@ pub const LinuxWatch = struct {
 
 
 pub const WindowsWatch = struct {
-    const filter = 0x0000_001f;
-    const wait_signaled = 0;
-    const wait_timeout = 0x0000_0102;
+    pub const filter = 0x0000_001f;
+    pub const wait_signaled = 0;
+    pub const wait_timeout = 0x0000_0102;
 };
 
 
