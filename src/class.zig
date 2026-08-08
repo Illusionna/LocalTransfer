@@ -20,9 +20,9 @@ pub const search_max_file_read_bytes = 256 * 1024;
 
 
 pub const LinuxWatch = struct {
-    const init_nonblock = 0x800;
-    const init_cloexec = 0x80000;
-    const event_mask = 0x0000_0fce;
+    pub const init_nonblock = 0x800;
+    pub const init_cloexec = 0x80000;
+    pub const event_mask = 0x0000_0fce;
 };
 
 
