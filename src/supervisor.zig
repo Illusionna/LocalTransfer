@@ -89,13 +89,13 @@ fn add_linux_watch(allocator: std.mem.Allocator, fd: std.posix.fd_t, path: []con
 fn monitor_windows(context: class.MonitorContext) !void {
     const root_w = try std.unicode.wtf8ToWtf16LeAllocZ(context.allocator, context.root);
     defer context.allocator.free(root_w);
-    const handle = class.FindFirstChangeNotificationW(root_w, 1, class.WindowsWatch.filter) orelse return error.WatchCreationFailed;
+    const handle = FindFirstChangeNotificationW(root_w, 1, class.WindowsWatch.filter) orelse return error.WatchCreationFailed;
     if (@intFromPtr(handle) == std.math.maxInt(usize)) return error.WatchCreationFailed;
-    defer _ = class.FindCloseChangeNotification(handle);
+    defer _ = FindCloseChangeNotification(handle);
     while (!context.hub.is_stopping(context.io)) {
-        switch (class.WaitForSingleObject(handle, class.shutdown_poll_ms)) {
+        switch (WaitForSingleObject(handle, class.shutdown_poll_ms)) {
             class.WindowsWatch.wait_signaled => {
-                if (class.FindNextChangeNotification(handle) == 0) return error.WatchRearmFailed;
+                if (FindNextChangeNotification(handle) == 0) return error.WatchRearmFailed;
                 refresh_after_native_change(context);
             },
             class.WindowsWatch.wait_timeout => {},
