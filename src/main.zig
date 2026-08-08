@@ -4,6 +4,7 @@ const core = @import("core.zig");
 const class = @import("class.zig");
 const usage = @import("usage.zig");
 const utils = @import("utils.zig");
+const supervisor = @import("supervisor.zig");
 const controllers = @import("controllers.zig");
 
 
@@ -12,7 +13,7 @@ pub const std_options: std.Options = .{
     .log_scope_levels = &.{
         .{
             .scope = .websocket,
-            .level = .warn
+            .level = .err
         }
     }
 };
@@ -59,6 +60,8 @@ pub fn main(init: std.process.Init) !void {
         return;
     };
 
+    core.cleanup_transfer_temporary_files(init.io, cfg.store_dir);
+
     var buffer: [4096]u8 = undefined;
     var fw = std.Io.File.stdout().writer(init.io, &buffer);
     try usage.print_launch(&fw.interface, &cfg, args_list.items[0]);
@@ -77,8 +80,8 @@ pub fn main(init: std.process.Init) !void {
 
     var watcher = try std.Thread.spawn(
         .{},
-        core.monitor,
-        .{ init.io, gpa, &hub, cfg.share_dir, 1200 }
+        supervisor.monitor,
+        .{ init.io, gpa, &hub, cfg.share_dir }
     );
     var watcher_running = true;
     defer {

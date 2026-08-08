@@ -9,6 +9,8 @@ build:
 	zig build $(ZIG_FLAGS)
 
 clean:
+	find . -type d -name 'zig-cache' -prune -exec rm -rf -- {} +
 	find . -type d -name '.zig-cache' -prune -exec rm -rf -- {} +
+	find . -type d -name 'zig-out' -prune -exec rm -rf -- {} +
 	find . -type d -name '.DS_Store' -prune -exec rm -rf -- {} +
-	rm ziger
+	rm -rf ziger

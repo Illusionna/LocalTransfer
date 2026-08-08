@@ -6,15 +6,13 @@ const class = @import("class.zig");
 const assets = @import("assets.zig");
 
 
-pub fn monitor(io: std.Io, gpa: std.mem.Allocator, hub: *class.WatchHub, share_dir: []const u8, ms: u64) void {
-    var prev = utils.dir_hash(io, gpa, share_dir);
-    while (!hub.is_stopping(io)) {
-        std.Io.sleep(io, .fromMilliseconds(@intCast(ms)), .awake) catch {};
-        if (hub.is_stopping(io)) return;
-        const current = utils.dir_hash(io, gpa, share_dir);
-        if (current == prev) continue;
-        prev = current;
-        hub.broadcast(io, "{\"type\": \"changed\"}");
+pub fn cleanup_transfer_temporary_files(io: std.Io, store_dir: []const u8) void {
+    var dir = std.Io.Dir.cwd().openDir(io, store_dir, .{ .iterate = true }) catch return;
+    defer dir.close(io);
+
+    var iterator = dir.iterate();
+    while (iterator.next(io) catch null) |entry| {
+        if (utils.is_internal_temporary_name(entry.name)) dir.deleteTree(io, entry.name) catch {};
     }
 }
 
@@ -25,7 +23,7 @@ pub fn read_full_request_body(request: *httpz.Request, timeout_ms: usize) !?[]co
     var reader = try request.reader(timeout_ms);
     var pos: usize = 0;
     while (pos < body.len) {
-        const n = try reader.read(body[pos..]);
+        const n = try reader.read(body[pos .. ]);
         if (n == 0) return error.EndOfStream;
         pos = pos + n;
     }
@@ -33,7 +31,13 @@ pub fn read_full_request_body(request: *httpz.Request, timeout_ms: usize) !?[]co
 }
 
 
-pub fn is_locked(state: *class.AppState, io: std.Io, allocator: std.mem.Allocator, cfg: *const class.AppConfig, user: []const u8) bool {
+pub fn is_locked(
+    state: *class.AppState,
+    io: std.Io,
+    allocator: std.mem.Allocator,
+    cfg: *const class.AppConfig,
+    user: []const u8
+) bool {
     if (cfg.login_pwd.len == 0) return false;
     if (user.len == 0) return true;
     state.mutex.lockUncancelable(io);
@@ -53,18 +57,9 @@ pub fn content_presentation(path: []const u8, sample: []const u8, sample_reached
     const unknown_type = std.mem.eql(u8, extension_mime, "application/octet-stream");
     const content_says_text = (extension_says_text or unknown_type) and utils.is_probably_plain_text(sample, sample_reached_eof);
 
-    if (content_says_text) return .{
-        .content_type = if (extension_says_text) extension_mime else "text/plain; charset=utf-8",
-        .should_inline = true
-    };
-    if (extension_says_text) return .{
-        .content_type = "application/octet-stream",
-        .should_inline = false
-    };
-    return .{
-        .content_type = extension_mime,
-        .should_inline = utils.is_viewable_mime(extension_mime)
-    };
+    if (content_says_text) return .{ .content_type = if (extension_says_text) extension_mime else "text/plain; charset=utf-8", .should_inline = true };
+    if (extension_says_text) return .{ .content_type = "application/octet-stream", .should_inline = false };
+    return .{ .content_type = extension_mime, .should_inline = utils.is_viewable_mime(extension_mime) };
 }
 
 
@@ -95,19 +90,19 @@ pub fn render_index(allocator: std.mem.Allocator, src: []const u8, state: *class
     var i: usize = 0;
     while (i < src.len) {
         const open = std.mem.indexOfPos(u8, src, i, "{{") orelse {
-            try out.appendSlice(allocator, src[i..]);
+            try out.appendSlice(allocator, src[i .. ]);
             break;
         };
         try out.appendSlice(allocator, src[i .. open]);
 
         const close = std.mem.indexOfPos(u8, src, open + 2, "}}") orelse {
-            try out.appendSlice(allocator, src[open..]);
+            try out.appendSlice(allocator, src[open .. ]);
             break;
         };
         const directive = std.mem.trim(u8, src[open + 2 .. close], " \t");
 
         if (std.mem.startsWith(u8, directive, "if ")) {
-            const expression = std.mem.trim(u8, directive[3..], " \t.");
+            const expression = std.mem.trim(u8, directive[3 .. ], " \t.");
             const condition = utils.lookup_web_option(state, expression) orelse false;
             const end_open = std.mem.indexOfPos(u8, src, close + 2, "{{") orelse break;
             const end_close = std.mem.indexOfPos(u8, src, end_open + 2, "}}") orelse break;
@@ -128,15 +123,7 @@ pub fn list_dir(io: std.Io, allocator: std.mem.Allocator, share_dir: []const u8,
     errdefer list.deinit(allocator);
 
     if (!std.mem.eql(u8, path, ".") and path.len != 0) {
-        try list.append(
-            allocator,
-            .{
-                .FileName = try allocator.dupe(u8, ". ."),
-                .FileSize = try allocator.dupe(u8, ""),
-                .FileIcon = try allocator.dupe(u8, "NULL"),
-                .ModifiedTime = try allocator.dupe(u8, "")
-            }
-        );
+        try list.append(allocator, .{ .FileName = try allocator.dupe(u8, ". ."), .FileSize = try allocator.dupe(u8, ""), .FileIcon = try allocator.dupe(u8, "NULL"), .ModifiedTime = try allocator.dupe(u8, "") });
     }
 
     var dir = utils.open_confined_dir(io, share_dir, path, true) catch return list.toOwnedSlice(allocator);
@@ -144,18 +131,11 @@ pub fn list_dir(io: std.Io, allocator: std.mem.Allocator, share_dir: []const u8,
 
     var iterator = dir.iterate();
     while (try iterator.next(io)) |entry| {
+        if (utils.is_internal_temporary_name(entry.name)) continue;
         if (entry.kind == .sym_link) continue;
         const is_directory = entry.kind == .directory;
         if (is_directory) {
-            try list.append(
-                allocator,
-                .{
-                    .FileName = try allocator.dupe(u8, entry.name),
-                    .FileSize = try allocator.dupe(u8, "----"),
-                    .FileIcon = try allocator.dupe(u8, "FOLDER"),
-                    .ModifiedTime = try allocator.dupe(u8, "")
-                }
-            );
+            try list.append(allocator, .{ .FileName = try allocator.dupe(u8, entry.name), .FileSize = try allocator.dupe(u8, "----"), .FileIcon = try allocator.dupe(u8, "FOLDER"), .ModifiedTime = try allocator.dupe(u8, "") });
             continue;
         }
         const stat = dir.statFile(io, entry.name, .{}) catch continue;
@@ -163,18 +143,10 @@ pub fn list_dir(io: std.Io, allocator: std.mem.Allocator, share_dir: []const u8,
             const extension = std.fs.path.extension(entry.name);
             if (extension.len <= 1) break :blk try allocator.dupe(u8, "NULL");
             const lower = try allocator.alloc(u8, extension.len - 1);
-            for (extension[1..], 0..) |c, i| lower[i] = std.ascii.toLower(c);
+            for (extension[1 .. ], 0 .. ) |c, i| lower[i] = std.ascii.toLower(c);
             break :blk lower;
         };
-        try list.append(
-            allocator,
-            .{
-                .FileName = try allocator.dupe(u8, entry.name),
-                .FileSize = try utils.format_file_size(allocator, @intCast(stat.size)),
-                .FileIcon = icon,
-                .ModifiedTime = try utils.format_time(allocator, stat.mtime)
-            }
-        );
+        try list.append(allocator, .{ .FileName = try allocator.dupe(u8, entry.name), .FileSize = try utils.format_file_size(allocator, @intCast(stat.size)), .FileIcon = icon, .ModifiedTime = try utils.format_time(allocator, stat.mtime) });
     }
     return list.toOwnedSlice(allocator);
 }
@@ -187,23 +159,20 @@ pub fn calculate_property(io: std.Io, allocator: std.mem.Allocator, share_dir: [
     var saw_anything = false;
 
     for (items) |item| {
-        if (!utils.access_item(item.Path) or !utils.confined_path(io, share_dir, item.Path, false)) continue;
-        const full = try utils.join_path(allocator, share_dir, &.{ item.Path });
-        defer allocator.free(full);
-
-        const file = std.Io.Dir.cwd().openFile(io, full, .{}) catch continue;
-        const stat = file.stat(io) catch {
-            file.close(io);
-            continue;
-        };
-        file.close(io);
+        var parent = utils.open_confined_parent(io, share_dir, item.Path) catch continue;
+        defer parent.close(io);
+        const stat = parent.dir.statFile(io, parent.leaf, .{ .follow_symlinks = false }) catch continue;
+        if (stat.kind == .sym_link) continue;
         saw_anything = true;
 
         if (stat.kind == .directory) {
-            const r: class.FileSizeCount = utils.folder_size_count(io, allocator, full) catch class.FileSizeCount{ .size = 0, .count = 0 };
+            var dir = parent.dir.openDir(io, parent.leaf, .{ .iterate = true, .follow_symlinks = false }) catch continue;
+            defer dir.close(io);
+            const r: class.FileSizeCount = utils.folder_size_count(io, allocator, dir) catch class.FileSizeCount{ .size = 0, .count = 0 };
             sum_size = sum_size + r.size;
             file_count = file_count + r.count;
-        } else {
+        }
+        else {
             sum_size = sum_size + @as(@TypeOf(sum_size), @intCast(stat.size));
             file_count = file_count + 1;
         }
@@ -211,25 +180,21 @@ pub fn calculate_property(io: std.Io, allocator: std.mem.Allocator, share_dir: [
     }
 
     if (!saw_anything) {
-        return .{
-            .FileCount = 0,
-            .SumSize = try allocator.dupe(u8, "NULL"),
-            .ModifiedTime = try allocator.dupe(u8, "NULL"),
-            .AgoTime = try allocator.dupe(u8, "NULL")
-        };
+        return .{ .FileCount = 0, .SumSize = try allocator.dupe(u8, "NULL"), .ModifiedTime = try allocator.dupe(u8, "NULL"), .AgoTime = try allocator.dupe(u8, "NULL") };
     }
     if (items.len == 1 and file_count == 0) file_count = 1;
 
-    return .{
-        .FileCount = file_count,
-        .SumSize = try utils.format_file_size(allocator, sum_size),
-        .ModifiedTime = try utils.format_time(allocator, latest_mtime),
-        .AgoTime = try utils.ago_time(io, allocator, latest_mtime)
-    };
+    return .{ .FileCount = file_count, .SumSize = try utils.format_file_size(allocator, sum_size), .ModifiedTime = try utils.format_time(allocator, latest_mtime), .AgoTime = try utils.ago_time(io, allocator, latest_mtime) };
 }
 
 
-pub fn streaming_multipart(io: std.Io, gpa: std.mem.Allocator, cfg: *const class.AppConfig, content_type: []const u8, reader: class.ChunkReader) ![]class.FileOperationResult {
+pub fn streaming_multipart(
+    io: std.Io,
+    gpa: std.mem.Allocator,
+    cfg: *const class.AppConfig,
+    content_type: []const u8,
+    reader: class.ChunkReader
+) ![]class.FileOperationResult {
     var results: std.ArrayList(class.FileOperationResult) = .empty;
     errdefer {
         for (results.items) |result| gpa.free(result.Path);
@@ -237,13 +202,13 @@ pub fn streaming_multipart(io: std.Io, gpa: std.mem.Allocator, cfg: *const class
     }
     const bm = "boundary=";
     const idx = std.mem.indexOf(u8, content_type, bm) orelse return error.NoBoundary;
-    var boundary_raw = content_type[idx + bm.len ..];
+    var boundary_raw = content_type[idx + bm.len .. ];
     if (std.mem.indexOfAny(u8, boundary_raw, ";")) |sc| boundary_raw = boundary_raw[0 .. sc];
     boundary_raw = std.mem.trim(u8, boundary_raw, " \t\"");
 
-    const sep_first = try std.fmt.allocPrint(gpa, "--{s}", .{ boundary_raw });
+    const sep_first = try std.fmt.allocPrint(gpa, "--{s}", .{boundary_raw});
     defer gpa.free(sep_first);
-    const sep = try std.fmt.allocPrint(gpa, "\r\n--{s}", .{ boundary_raw });
+    const sep = try std.fmt.allocPrint(gpa, "\r\n--{s}", .{boundary_raw});
     defer gpa.free(sep);
     const buffer = try gpa.alloc(u8, 128 * 1024);
     defer gpa.free(buffer);
@@ -298,7 +263,7 @@ pub fn streaming_multipart(io: std.Io, gpa: std.mem.Allocator, cfg: *const class
         if (std.mem.eql(u8, part_name, "File") and part_filename != null) {
             const tmp_name = try std.fmt.allocPrint(gpa, ".upload.{d}.{d}.{d}.tmp", .{ session_tid, session_ns, tmp_seq });
             tmp_seq = tmp_seq + 1;
-            const tmp_path = try utils.join_path(gpa, cfg.store_dir, &.{ tmp_name });
+            const tmp_path = try utils.join_path(gpa, cfg.store_dir, &.{tmp_name});
             gpa.free(tmp_name);
             errdefer cwd.deleteFile(io, tmp_path) catch {};
             errdefer gpa.free(tmp_path);
@@ -320,7 +285,7 @@ pub fn streaming_multipart(io: std.Io, gpa: std.mem.Allocator, cfg: *const class
                 var write_buffer: [64 * 1024]u8 = undefined;
                 var fw = file.writer(io, &write_buffer);
                 try sp.stream_until_boundary(&fw.interface, sep, @intCast(@max(cfg.max_bytes(), 0)));
-                fw.interface.flush() catch {};
+                try fw.interface.flush();
             }
 
             if (pending_rel) |rel| {
@@ -330,11 +295,13 @@ pub fn streaming_multipart(io: std.Io, gpa: std.mem.Allocator, cfg: *const class
                 pending_rel = null;
                 if (renamed) {
                     gpa.free(tmp_path);
-                } else {
+                }
+                else {
                     cwd.deleteFile(io, tmp_path) catch {};
                     gpa.free(tmp_path);
                 }
-            } else {
+            }
+            else {
                 if (pending_tmp) |old_tmp| {
                     cwd.deleteFile(io, old_tmp) catch {};
                     gpa.free(old_tmp);
@@ -342,7 +309,6 @@ pub fn streaming_multipart(io: std.Io, gpa: std.mem.Allocator, cfg: *const class
                 pending_tmp = tmp_path;
             }
         }
-        
         else if (std.mem.eql(u8, part_name, "RelativePath")) {
             var val_buffer: [4096]u8 = undefined;
             const rel = try sp.collect_until_boundary(sep, &val_buffer);
@@ -360,17 +326,18 @@ pub fn streaming_multipart(io: std.Io, gpa: std.mem.Allocator, cfg: *const class
                 pending_tmp = null;
                 if (renamed) {
                     gpa.free(tmp);
-                } else {
+                }
+                else {
                     cwd.deleteFile(io, tmp) catch {};
                     gpa.free(tmp);
                 }
                 try append_upload_result(gpa, &results, rel, renamed, if (renamed) "" else "destination exists or upload failed");
-            } else {
+            }
+            else {
                 if (pending_rel) |old_rel| gpa.free(old_rel);
                 pending_rel = try gpa.dupe(u8, rel);
             }
         }
-
         else if (std.mem.eql(u8, part_name, "CurrentDir")) {
             var val_buffer: [4096]u8 = undefined;
             const slice = try sp.collect_until_boundary(sep, &val_buffer);
@@ -379,9 +346,7 @@ pub fn streaming_multipart(io: std.Io, gpa: std.mem.Allocator, cfg: *const class
                 current_dir_owned = try gpa.dupe(u8, slice);
                 current_dir = current_dir_owned;
             }
-        }
-
-        else try sp.skip_until_boundary(sep);
+        } else try sp.skip_until_boundary(sep);
     }
     if (pending_rel) |rel| try append_upload_result(gpa, &results, rel, false, "missing file data");
     if (pending_tmp != null) try append_upload_result(gpa, &results, "", false, "missing relative path");
@@ -389,12 +354,24 @@ pub fn streaming_multipart(io: std.Io, gpa: std.mem.Allocator, cfg: *const class
 }
 
 
-fn append_upload_result(allocator: std.mem.Allocator, results: *std.ArrayList(class.FileOperationResult), path: []const u8, success: bool, message: []const u8) !void {
+fn append_upload_result(
+    allocator: std.mem.Allocator,
+    results: *std.ArrayList(class.FileOperationResult),
+    path: []const u8,
+    success: bool,
+    message: []const u8
+) !void {
     try results.append(allocator, .{ .Path = try allocator.dupe(u8, path), .Success = success, .Error = message });
 }
 
 
-pub fn search_file(io: std.Io, allocator: std.mem.Allocator, share_dir: []const u8, request: class.FileSearch) ![]class.SearchResult {
+pub fn search_file(
+    io: std.Io,
+    allocator: std.mem.Allocator,
+    scratch_allocator: std.mem.Allocator,
+    share_dir: []const u8,
+    request: class.FileSearch
+) !class.SearchResponse {
     var out: std.ArrayList(class.SearchResult) = .empty;
     errdefer {
         for (out.items) |h| {
@@ -404,42 +381,89 @@ pub fn search_file(io: std.Io, allocator: std.mem.Allocator, share_dir: []const 
         out.deinit(allocator);
     }
 
-    if (request.Target.len == 0 or request.Path.len == 0) return out.toOwnedSlice(allocator);
-    if (!utils.access_super(request.CurrentDir) or !utils.confined_path(io, share_dir, request.CurrentDir, false)) return out.toOwnedSlice(allocator);
+    const page_size = @min(if (request.Limit == 0) class.search_default_page_size else request.Limit, class.search_max_results);
+    var budget: class.SearchBudget = .{ .started = std.Io.Clock.awake.now(io) };
+    var matched: usize = 0;
+    var has_more = false;
 
-    for (request.Path) |root| {
-        if (!utils.access_item(root) or !utils.confined_path(io, share_dir, root, false)) continue;
+    if (request.Target.len == 0 or request.Path.len == 0) return search_response(allocator, &out, request.Offset, has_more, budget);
+    if (!utils.access_super(request.CurrentDir) or !utils.confined_path(io, share_dir, request.CurrentDir, false)) return search_response(allocator, &out, request.Offset, has_more, budget);
+
+    for (request.Path, 0 .. ) |root, root_index| {
+        if (root_index >= class.search_max_roots or budget.exhausted(io)) {
+            budget.truncated = true;
+            break;
+        }
+        if (search_root_seen(request.Path[0 .. root_index], root)) continue;
+        if (!utils.access_item(root)) continue;
         const display_root = utils.relative_search_path(request.CurrentDir, root) orelse continue;
-        const full = try utils.join_path(allocator, share_dir, &.{ root });
-        defer allocator.free(full);
-        if (!utils.exists_path(io, full)) continue;
-
-        var dir = std.Io.Dir.cwd().openDir(io, full, .{ .iterate = true, .follow_symlinks = false }) catch {
-            try append_search_result(io, allocator, &out, full, std.fs.path.basename(root), display_root, request.Target, true);
+        var dir = utils.open_confined_dir(io, share_dir, root, true) catch {
+            var parent = utils.open_confined_parent(io, share_dir, root) catch continue;
+            defer parent.close(io);
+            const stat = parent.dir.statFile(io, parent.leaf, .{ .follow_symlinks = false }) catch continue;
+            if (stat.kind == .sym_link or stat.kind == .directory) continue;
+            budget.scanned_files = budget.scanned_files + 1;
+            if (try append_search_page_result(io, allocator, scratch_allocator, &out, parent.dir, parent.leaf, std.fs.path.basename(root), display_root, request.Target, true, request.Offset, page_size, &matched)) has_more = true;
+            if (has_more) break;
             continue;
         };
         defer dir.close(io);
-        try append_search_result(io, allocator, &out, full, std.fs.path.basename(root), display_root, request.Target, false);
+        if (try append_search_page_result(io, allocator, scratch_allocator, &out, dir, "", std.fs.path.basename(root), display_root, request.Target, false, request.Offset, page_size, &matched)) {
+            has_more = true;
+            break;
+        }
 
-        var walker = try dir.walk(allocator);
+        var walker = try dir.walk(scratch_allocator);
         defer walker.deinit();
         while (try walker.next(io)) |entry| {
+            if (budget.exhausted(io)) break;
+            if (entry.depth() > class.search_max_depth) {
+                if (entry.kind == .directory) walker.leave(io);
+                continue;
+            }
             if (entry.kind == .sym_link) continue;
-            const rel = try std.fs.path.join(allocator, &.{ root, entry.path });
-            defer allocator.free(rel);
+            budget.scanned_files = budget.scanned_files + 1;
+            const rel = try std.fs.path.join(scratch_allocator, &.{ root, entry.path });
+            defer scratch_allocator.free(rel);
             const display_path = utils.relative_search_path(request.CurrentDir, rel) orelse continue;
-            const entry_full = try utils.join_path(allocator, share_dir, &.{ rel });
-            defer allocator.free(entry_full);
-            try append_search_result(io, allocator, &out, entry_full, entry.basename, display_path, request.Target, entry.kind != .directory);
+            if (try append_search_page_result(io, allocator, scratch_allocator, &out, entry.dir, entry.basename, entry.basename, display_path, request.Target, entry.kind != .directory, request.Offset, page_size, &matched)) {
+                has_more = true;
+                break;
+            }
         }
+        if (has_more or budget.truncated) break;
     }
-    return out.toOwnedSlice(allocator);
+    return search_response(allocator, &out, request.Offset, has_more, budget);
 }
 
 
-pub fn write_batch_archive(io: std.Io, allocator: std.mem.Allocator, share_dir: []const u8, items: []const class.FileRequest, writer: *std.Io.Writer) !void {
+fn search_root_seen(previous: []const []const u8, root: []const u8) bool {
+    for (previous) |item| if (std.mem.eql(u8, item, root)) return true;
+    return false;
+}
+
+
+fn search_response(
+    allocator: std.mem.Allocator,
+    out: *std.ArrayList(class.SearchResult),
+    offset: usize,
+    has_more: bool,
+    budget: class.SearchBudget
+) !class.SearchResponse {
+    const results = try out.toOwnedSlice(allocator);
+    return .{ .Results = results, .NextOffset = if (has_more) offset + results.len else null, .Truncated = budget.truncated, .ScannedFiles = budget.scanned_files };
+}
+
+
+pub fn write_batch_archive(
+    io: std.Io,
+    allocator: std.mem.Allocator,
+    share_dir: []const u8,
+    items: []const class.FileRequest,
+    writer: *std.Io.Writer
+) !void {
     if (items.len == 0) return error.EmptySelection;
-    for (items, 0..) |item, idx| {
+    for (items, 0 .. ) |item, idx| {
         if (!utils.access_item(item.Path) or !utils.confined_path(io, share_dir, item.Path, false)) return error.UnsafePath;
         const base = std.fs.path.basename(item.Path);
         for (items[0 .. idx]) |previous| if (std.mem.eql(u8, base, std.fs.path.basename(previous.Path))) return error.DuplicateArchiveName;
@@ -457,19 +481,48 @@ pub fn write_batch_archive(io: std.Io, allocator: std.mem.Allocator, share_dir: 
 pub fn delete_file(io: std.Io, allocator: std.mem.Allocator, share_dir: []const u8, items: []const class.FileRequest) ![]class.FileOperationResult {
     var results: std.ArrayList(class.FileOperationResult) = .empty;
     errdefer results.deinit(allocator);
-    var root = std.Io.Dir.cwd().openDir(io, share_dir, .{}) catch {
+    const root = std.Io.Dir.cwd().openDir(io, share_dir, .{}) catch {
         for (items) |it| try results.append(allocator, .{ .Path = it.Path, .Success = false, .Error = "shared directory is unavailable" });
         return results.toOwnedSlice(allocator);
     };
-    defer root.close(io);
+    root.close(io);
+
     for (items) |it| {
-        if (!utils.access_item(it.Path) or !utils.confined_path(io, share_dir, it.Path, false)) {
+        if (!utils.access_item(it.Path)) {
             try results.append(allocator, .{ .Path = it.Path, .Success = false, .Error = "invalid or unsafe path" });
             continue;
         }
-        root.deleteTree(io, it.Path) catch {
-            try results.append(allocator, .{ .Path = it.Path, .Success = false, .Error = "delete failed" });
+
+        var parent = utils.open_confined_parent(io, share_dir, it.Path) catch |err| {
+            if (err == error.FileNotFound) {
+                try results.append(allocator, .{ .Path = it.Path, .Success = true });
+            }
+            else {
+                try results.append(allocator, .{ .Path = it.Path, .Success = false, .Error = @errorName(err) });
+            }
             continue;
+        };
+        defer parent.close(io);
+
+        const stat = parent.dir.statFile(io, parent.leaf, .{ .follow_symlinks = false }) catch |err| {
+            if (err == error.FileNotFound) {
+                try results.append(allocator, .{ .Path = it.Path, .Success = true });
+            }
+            else {
+                try results.append(allocator, .{ .Path = it.Path, .Success = false, .Error = @errorName(err) });
+            }
+            continue;
+        };
+        if (stat.kind == .sym_link) {
+            try results.append(allocator, .{ .Path = it.Path, .Success = false, .Error = "symbolic links are not allowed" });
+            continue;
+        }
+
+        parent.dir.deleteTree(io, parent.leaf) catch |err| {
+            if (err != error.FileNotFound) {
+                try results.append(allocator, .{ .Path = it.Path, .Success = false, .Error = @errorName(err) });
+                continue;
+            }
         };
         try results.append(allocator, .{ .Path = it.Path, .Success = true });
     }
@@ -511,7 +564,7 @@ pub fn rename_file(io: std.Io, allocator: std.mem.Allocator, share_dir: []const 
     io.random(&random);
     const token = std.fmt.bytesToHex(random, .lower);
 
-    for (items, 0..) |it, idx| {
+    for (items, 0 .. ) |it, idx| {
         if ((it.NewName.len > 0) != explicit_names) return rename_failure_results(allocator, items, "cannot mix single and batch rename modes");
         if (!utils.access_super(it.CurrentDir) or !utils.access_name(it.OldName) or (!explicit_names and (std.mem.indexOfAny(u8, it.Prefix, "/\\\x00") != null or std.mem.indexOfAny(u8, it.Suffix, "/\\\x00") != null))) return rename_failure_results(allocator, items, "invalid path or name");
         const src = try utils.join_relative(allocator, it.CurrentDir, it.OldName);
@@ -537,7 +590,7 @@ pub fn rename_file(io: std.Io, allocator: std.mem.Allocator, share_dir: []const 
         try plans.append(allocator, .{ .source = src, .destination = dst, .temporary = temporary, .display = it.OldName, .is_directory = stat.kind == .directory });
     }
 
-    for (plans.items, 0..) |plan, idx| {
+    for (plans.items, 0 .. ) |plan, idx| {
         for (plans.items[0 .. idx]) |previous| if (std.mem.eql(u8, plan.source, previous.source) or std.mem.eql(u8, plan.destination, previous.destination)) {
             return rename_failure_results(allocator, items, "duplicate source or destination name");
         };
@@ -547,7 +600,7 @@ pub fn rename_file(io: std.Io, allocator: std.mem.Allocator, share_dir: []const 
         }
     }
 
-    for (plans.items, 0..) |plan, idx| {
+    for (plans.items, 0 .. ) |plan, idx| {
         if (plan.state == .unchanged) continue;
         rename_without_replace(io, root, plan.source, root, plan.temporary, plan.is_directory) catch {
             rollback_rename_plans(io, root, plans.items);
@@ -555,7 +608,7 @@ pub fn rename_file(io: std.Io, allocator: std.mem.Allocator, share_dir: []const 
         };
         plans.items[idx].state = .staged;
     }
-    for (plans.items, 0..) |plan, idx| {
+    for (plans.items, 0 .. ) |plan, idx| {
         if (plan.state == .unchanged) continue;
         rename_without_replace(io, root, plan.temporary, root, plan.destination, plan.is_directory) catch {
             rollback_rename_plans(io, root, plans.items);
@@ -568,11 +621,18 @@ pub fn rename_file(io: std.Io, allocator: std.mem.Allocator, share_dir: []const 
 }
 
 
-fn rename_without_replace(io: std.Io, source_dir: std.Io.Dir, source: []const u8, destination_dir: std.Io.Dir, destination: []const u8, is_directory: bool) !void {
+fn rename_without_replace(
+    io: std.Io,
+    source_dir: std.Io.Dir,
+    source: []const u8,
+    destination_dir: std.Io.Dir,
+    destination: []const u8,
+    is_directory: bool
+) !void {
     if (!is_directory) return source_dir.renamePreserve(source, destination_dir, destination, io);
     if (destination_dir.statFile(io, destination, .{ .follow_symlinks = false })) |_| return error.PathAlreadyExists else |err| switch (err) {
         error.FileNotFound => {},
-        else => return err
+        else => return err,
     }
     return source_dir.rename(source, destination_dir, destination, io);
 }
@@ -608,7 +668,13 @@ pub fn move_file(io: std.Io, allocator: std.mem.Allocator, share_dir: []const u8
 }
 
 
-fn transfer_file(io: std.Io, allocator: std.mem.Allocator, share_dir: []const u8, items: []const class.FileRequest, mode: class.TransferMode) ![]class.FileOperationResult {
+fn transfer_file(
+    io: std.Io,
+    allocator: std.mem.Allocator,
+    share_dir: []const u8,
+    items: []const class.FileRequest,
+    mode: class.TransferMode
+) ![]class.FileOperationResult {
     var results: std.ArrayList(class.FileOperationResult) = .empty;
     errdefer results.deinit(allocator);
     const cwd = std.Io.Dir.cwd();
@@ -622,7 +688,7 @@ fn transfer_file(io: std.Io, allocator: std.mem.Allocator, share_dir: []const u8
             try results.append(allocator, .{ .Path = it.Path, .Success = false, .Error = "invalid or unsafe path" });
             continue;
         }
-        const src = try utils.join_path(allocator, share_dir, &.{ it.Path });
+        const src = try utils.join_path(allocator, share_dir, &.{it.Path});
         defer allocator.free(src);
         const base = std.fs.path.basename(it.Path);
         const requested_dst_rel = utils.join_relative(allocator, it.CurrentDir, base) catch return error.OutOfMemory;
@@ -648,7 +714,7 @@ fn transfer_file(io: std.Io, allocator: std.mem.Allocator, share_dir: []const u8
         switch (mode) {
             .transfer_copy => {
                 if (src_stat.kind == .directory) {
-                    const directory_dst = try utils.join_path(allocator, share_dir, &.{ dst_rel });
+                    const directory_dst = try utils.join_path(allocator, share_dir, &.{dst_rel});
                     defer allocator.free(directory_dst);
                     cwd.createDir(io, directory_dst, .default_dir) catch {
                         try results.append(allocator, .{ .Path = it.Path, .Success = false, .Error = "destination changed before directory copy" });
@@ -664,7 +730,7 @@ fn transfer_file(io: std.Io, allocator: std.mem.Allocator, share_dir: []const u8
                 }
                 const tmp_rel = try std.fmt.allocPrint(allocator, "{s}.copy.{d}.{d}.tmp", .{ dst_rel, std.Thread.getCurrentId(), std.Io.Clock.real.now(io).toNanoseconds() });
                 defer allocator.free(tmp_rel);
-                const tmp = try utils.join_path(allocator, share_dir, &.{ tmp_rel });
+                const tmp = try utils.join_path(allocator, share_dir, &.{tmp_rel});
                 defer allocator.free(tmp);
                 utils.copy_any(io, allocator, src, tmp) catch {
                     cwd.deleteTree(io, tmp) catch {};
@@ -708,7 +774,7 @@ fn transfer_file(io: std.Io, allocator: std.mem.Allocator, share_dir: []const u8
                         else => {
                             try results.append(allocator, .{ .Path = it.Path, .Success = false, .Error = "destination changed or move failed" });
                             continue;
-                        }
+                        },
                     };
                     try results.append(allocator, .{ .Path = it.Path, .Success = true });
                     continue;
@@ -717,7 +783,7 @@ fn transfer_file(io: std.Io, allocator: std.mem.Allocator, share_dir: []const u8
                     try results.append(allocator, .{ .Path = it.Path, .Success = false, .Error = "destination changed or move failed" });
                     continue;
                 };
-            }
+            },
         }
         try results.append(allocator, .{ .Path = it.Path, .Success = true });
     }
@@ -725,7 +791,13 @@ fn transfer_file(io: std.Io, allocator: std.mem.Allocator, share_dir: []const u8
 }
 
 
-fn copy_directory_confined(io: std.Io, source_parent: std.Io.Dir, source_name: []const u8, destination_parent: std.Io.Dir, destination_name: []const u8) !void {
+fn copy_directory_confined(
+    io: std.Io,
+    source_parent: std.Io.Dir,
+    source_name: []const u8,
+    destination_parent: std.Io.Dir,
+    destination_name: []const u8
+) !void {
     var source = try source_parent.openDir(io, source_name, .{ .iterate = true, .follow_symlinks = false });
     defer source.close(io);
     var destination = try destination_parent.openDir(io, destination_name, .{ .iterate = true, .follow_symlinks = false });
@@ -749,7 +821,7 @@ fn copy_directory_contents_confined(io: std.Io, source: std.Io.Dir, destination:
             },
             .file => try copy_file_confined(io, source, destination, entry.name),
             .sym_link => return error.UnsafePath,
-            else => return error.UnsupportedFileType
+            else => return error.UnsupportedFileType,
         }
     }
 }
@@ -775,14 +847,21 @@ fn copy_file_confined(io: std.Io, source: std.Io.Dir, destination: std.Io.Dir, n
 }
 
 
-fn available_destination(io: std.Io, allocator: std.mem.Allocator, root: std.Io.Dir, current_dir: []const u8, base: []const u8, is_directory: bool) ![]u8 {
+fn available_destination(
+    io: std.Io,
+    allocator: std.mem.Allocator,
+    root: std.Io.Dir,
+    current_dir: []const u8,
+    base: []const u8,
+    is_directory: bool
+) ![]u8 {
     const requested = try utils.join_relative(allocator, current_dir, base);
     _ = root.statFile(io, requested, .{ .follow_symlinks = false }) catch |err| switch (err) {
         error.FileNotFound => return requested,
         else => {
             allocator.free(requested);
             return err;
-        }
+        },
     };
     allocator.free(requested);
 
@@ -798,7 +877,7 @@ fn available_destination(io: std.Io, allocator: std.mem.Allocator, root: std.Io.
             else => {
                 allocator.free(candidate);
                 return err;
-            }
+            },
         };
         allocator.free(candidate);
     }
@@ -830,20 +909,43 @@ fn finish_uploaded_tmp(
 }
 
 
-fn append_search_result(
+fn append_search_page_result(
     io: std.Io,
     allocator: std.mem.Allocator,
+    scratch_allocator: std.mem.Allocator,
     out: *std.ArrayList(class.SearchResult),
-    full_path: []const u8,
+    dir: std.Io.Dir,
+    leaf: []const u8,
     name: []const u8,
     display_path: []const u8,
     target: []const u8,
-    search_content: bool
-) !void {
+    search_content: bool,
+    offset: usize,
+    limit: usize,
+    matched: *usize
+) !bool {
     const name_matches = std.ascii.indexOfIgnoreCase(name, target) != null;
-    const description = if (search_content) try utils.find_matching_text_snippet(io, allocator, full_path, target) else null;
+    const description = if (search_content) try utils.find_matching_text_snippet(
+        io,
+        scratch_allocator,
+        allocator,
+        dir,
+        leaf,
+        target,
+        class.search_max_file_read_bytes
+    ) else null;
     errdefer if (description) |line| allocator.free(line);
-    if (!name_matches and description == null) return;
+    if (!name_matches and description == null) return false;
+
+    matched.* = matched.* + 1;
+    if (matched.* <= offset) {
+        if (description) |line| allocator.free(line);
+        return false;
+    }
+    if (out.items.len >= limit) {
+        if (description) |line| allocator.free(line);
+        return true;
+    }
 
     const path = try allocator.dupe(u8, display_path);
     errdefer allocator.free(path);
@@ -854,4 +956,5 @@ fn append_search_result(
             .Description = description orelse ""
         }
     );
+    return false;
 }
