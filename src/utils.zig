@@ -255,14 +255,14 @@ pub fn dir_hash(io: std.Io, allocator: std.mem.Allocator, dir: []const u8) !u64 
     defer d.close(io);
     var walker = try d.walk(allocator);
     defer walker.deinit();
-    while (try walker.next(io)) |entry| {
+    while (walker.next(io) catch null) |entry| {
         if (is_internal_temporary_path(entry.path)) continue;
         hasher.update(entry.path);
         if (entry.kind == .directory) {
             hasher.update("/");
             continue;
         }
-        const stat = try entry.dir.statFile(io, entry.basename, .{});
+        const stat = entry.dir.statFile(io, entry.basename, .{}) catch continue;
         const size_bytes = std.mem.asBytes(&stat.size);
         hasher.update(size_bytes);
         const time_bytes = std.mem.asBytes(&stat.mtime.nanoseconds);
