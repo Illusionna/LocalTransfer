@@ -37,6 +37,8 @@ function CreateUploadDialog() {
     const progress_text = document.querySelector('.upload-progress-text');
     let selected_upload_files = [];
     let upload_in_progress = false;
+    let upload_cancelled = false;
+    let active_upload_request = null;
 
     function HandleUploadFile(files) {
         selected_upload_files = Array.from(files).map(item => {
@@ -87,32 +89,57 @@ function CreateUploadDialog() {
         });
     }
 
-    async function TraverseDirectoryTree(entry, path='') {
-        if (entry.isFile) {
-            const file = await ReadEntryFile(entry);
-            return [{ file: file, path: path + file.name }];
-        }
+    async function TraverseDirectoryTree(entries) {
+        const files = [];
+        const pending = entries.map(entry => ({ entry: entry, path: '' }));
+        let offset = 0;
 
-        if (entry.isDirectory) {
-            const entries = await ReadDirectoryEntries(entry.createReader());
-            const files = await Promise.all(entries.map(child => TraverseDirectoryTree(child, path + entry.name + '/')));
-            return files.flat();
-        }
+        while (offset < pending.length) {
+            const batch = pending.slice(offset, offset + 8);
+            offset += batch.length;
+            const results = await Promise.all(batch.map(async item => {
+                if (item.entry.isFile) {
+                    const file = await ReadEntryFile(item.entry);
+                    return { file: file, path: item.path + file.name };
+                }
+                if (item.entry.isDirectory) {
+                    const children = await ReadDirectoryEntries(item.entry.createReader());
+                    return children.map(child => ({ entry: child, path: item.path + item.entry.name + '/' }));
+                }
+                return null;
+            }));
 
-        return [];
+            for (const result of results) {
+                if (Array.isArray(result)) {
+                    pending.push(...result);
+                } else if (result) {
+                    files.push(result);
+                }
+            }
+        }
+        return files;
     }
 
     drop_zone.addEventListener('drop', async (e) => {
         e.preventDefault();
         drop_zone.classList.remove('dragover');
-        const entries = Array.from(e.dataTransfer.items)
-            .map(item => item.webkitGetAsEntry())
-            .filter(Boolean);
+        const items = Array.from(e.dataTransfer.items).filter(item => item.kind === 'file');
+        const entries = [];
+        const files = [];
+        for (const item of items) {
+            const get_entry = item.getAsEntry || item.webkitGetAsEntry;
+            if (typeof get_entry === 'function') {
+                const entry = get_entry.call(item);
+                if (entry) entries.push(entry);
+            } else {
+                const file = item.getAsFile();
+                if (file) files.push({ file: file, path: file.name });
+            }
+        }
 
         try {
             drop_zone_upload_button.querySelector('span').textContent = '正在读取文件夹...';
-            const nested_files = await Promise.all(entries.map(entry => TraverseDirectoryTree(entry)));
-            const files = nested_files.flat();
+            files.push(...await TraverseDirectoryTree(entries));
             HandleUploadFile(files);
         } catch (error) {
             alert("读取文件夹异常：" + error.message);
@@ -120,7 +147,13 @@ function CreateUploadDialog() {
     });
 
     document.querySelector('.upload-dialog-cancel').addEventListener('click', () => {
-        if (upload_in_progress) return;
+        if (upload_in_progress) {
+            upload_cancelled = true;
+            progress_text.textContent = '正在取消上传...';
+            document.querySelector('.upload-dialog-cancel').disabled = true;
+            if (active_upload_request) active_upload_request.abort();
+            return;
+        }
         upload_dialog.style.display = 'none';
     });
 
@@ -135,33 +168,53 @@ function CreateUploadDialog() {
         const cancel_button = document.querySelector('.upload-dialog-cancel');
         const upload_dir = CURRENT_DIR;
         const total_size = selected_upload_files.reduce((sum, item) => sum + item.file.size, 0);
+        const upload_batches = CreateUploadBatches(selected_upload_files);
         let completed_size = 0;
         const failures = [];
         upload_in_progress = true;
+        upload_cancelled = false;
         try {
             progress_container.style.display = 'block';
             progress_text.style.display = 'block';
             progress_bar.style.width = '0%';
             progress_bar.textContent = '0%';
             ok_button.disabled = true;
-            cancel_button.disabled = true;
+            cancel_button.disabled = false;
 
-            // The server limit is per request, so send one file at a time.
-            for (const item of selected_upload_files) {
-                const response = await UploadOneFile(item, upload_dir, (loaded) => {
-                    const current = completed_size + loaded;
-                    const percent = total_size === 0 ? 100 : Math.min(100, Math.round(current / total_size * 100));
-                    progress_bar.style.width = percent + '%';
-                    progress_bar.textContent = percent + '%';
-                    progress_text.textContent = `已上传 ${FormatFileSize(current)} / ${FormatFileSize(total_size)}`;
-                });
-                completed_size += item.file.size;
+            for (const batch of upload_batches) {
+                if (upload_cancelled) break;
+                const batch_size = batch.reduce((sum, item) => sum + item.file.size, 0);
+                let response;
+                try {
+                    response = await UploadFileBatch(batch, upload_dir, (loaded) => {
+                        const current = Math.min(total_size, completed_size + Math.min(loaded, batch_size));
+                        const percent = total_size === 0 ? 100 : Math.min(100, Math.round(current / total_size * 100));
+                        progress_bar.style.width = percent + '%';
+                        progress_bar.textContent = percent + '%';
+                        progress_text.textContent = `已上传 ${FormatFileSize(current)} / ${FormatFileSize(total_size)}`;
+                    });
+                } catch (error) {
+                    if (upload_cancelled) break;
+                    batch.forEach(item => failures.push({ Path: item.path, Error: error.message }));
+                    completed_size += batch_size;
+                    continue;
+                }
+                completed_size += batch_size;
 
                 if (response.results.length > 0) {
                     response.results.filter(result => !result.Success).forEach(result => failures.push(result));
                 } else {
-                    failures.push({ Path: item.path, Error: response.message || `HTTP ${response.status}` });
+                    batch.forEach(item => failures.push({ Path: item.path, Error: response.message || `HTTP ${response.status}` }));
                 }
+            }
+
+            if (upload_cancelled) {
+                progress_text.textContent = '上传已取消';
+                ClearFileSelections();
+                selected_upload_files = [];
+                await UpdateFileList(CURRENT_DIR);
+                upload_dialog.style.display = 'none';
+                return;
             }
 
             progress_bar.style.width = '100%';
@@ -179,23 +232,59 @@ function CreateUploadDialog() {
             alert("上传文件异常：" + error.message);
         } finally {
             upload_in_progress = false;
+            active_upload_request = null;
             ok_button.disabled = false;
             cancel_button.disabled = false;
         }
     });
 
-    function UploadOneFile(item, upload_dir, on_progress) {
+    function CreateUploadBatches(items) {
+        const batches = [];
+        let batch = [];
+        let batch_size = 0;
+
+        for (const item of items) {
+            if (item.file.size > 1024 * 1024) {
+                if (batch.length > 0) batches.push(batch);
+                batches.push([item]);
+                batch = [];
+                batch_size = 0;
+                continue;
+            }
+            if (batch.length > 0 && (batch.length >= 64 || batch_size + item.file.size > 16 * 1024 * 1024)) {
+                batches.push(batch);
+                batch = [];
+                batch_size = 0;
+            }
+            batch.push(item);
+            batch_size += item.file.size;
+        }
+        if (batch.length > 0) batches.push(batch);
+        return batches;
+    }
+
+    function UploadFileBatch(items, upload_dir, on_progress) {
         return new Promise((resolve, reject) => {
             const form_data = new FormData();
             form_data.append('CurrentDir', upload_dir);
-            form_data.append('RelativePath', item.path);
-            form_data.append('File', item.file, item.file.name);
+            items.forEach(item => {
+                form_data.append('RelativePath', item.path);
+                form_data.append('File', item.file, item.file.name);
+            });
 
             const xhr = new XMLHttpRequest();
+            active_upload_request = xhr;
             xhr.upload.addEventListener('progress', event => on_progress(event.loaded));
-            xhr.onerror = () => reject(new Error(`${item.path}: 网络连接中断`));
-            xhr.onabort = () => reject(new Error(`${item.path}: 上传已取消`));
+            xhr.onerror = () => {
+                if (active_upload_request === xhr) active_upload_request = null;
+                reject(new Error('网络连接中断'));
+            };
+            xhr.onabort = () => {
+                if (active_upload_request === xhr) active_upload_request = null;
+                reject(new Error('上传已取消'));
+            };
             xhr.onload = () => {
+                if (active_upload_request === xhr) active_upload_request = null;
                 let results = [];
                 try {
                     const parsed = JSON.parse(xhr.responseText);

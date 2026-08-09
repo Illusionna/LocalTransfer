@@ -19,7 +19,8 @@ pub fn listen_address(host: []const u8, port: u16) !httpz.Config.Address {
 
 pub fn upload_request_limit(cfg: *const class.AppConfig) usize {
     const file_limit: usize = @intCast(@max(cfg.max_bytes(), 0));
-    return std.math.add(usize, file_limit, 64 * 1024) catch std.math.maxInt(usize);
+    const batch_limit = @max(file_limit, 16 * 1024 * 1024);
+    return std.math.add(usize, batch_limit, 1024 * 1024) catch std.math.maxInt(usize);
 }
 
 
