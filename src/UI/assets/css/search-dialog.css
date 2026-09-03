@@ -90,9 +90,14 @@ input[type="file"]::file-selector-button:hover {
     color: #6c757d;
     font-size: 0.9rem;
 }
+.search-dialog-result-list {
+    margin: 0;
+    padding-left: 1.75rem;
+}
 .search-dialog-separator-line {
     margin-bottom: 1.5rem;
     padding-bottom: 1.5rem;
+    padding-left: 0.25rem;
     border-bottom: 1px solid #000000;
 }
 .search-dialog-separator-line:last-child {
@@ -102,6 +107,10 @@ input[type="file"]::file-selector-button:hover {
     font-size: 0.85rem;
     color: #28a745;
     margin-bottom: 0.5rem;
+}
+.search-dialog-result-item-descriptions {
+    margin: 0;
+    padding-left: 1.5rem;
 }
 .search-dialog-result-item-description {
     font-size: 0.9rem;

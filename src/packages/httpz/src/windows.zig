@@ -10,14 +10,23 @@ pub const std_windows = std.os.windows;
 const HANDLE = std_windows.HANDLE;
 const ULONG_PTR = std_windows.ULONG_PTR;
 const PVOID = std_windows.PVOID;
-const Win32Error = std_windows.Win32Error;
 const UnexpectedError = std.posix.UnexpectedError;
 const GetLastError = std_windows.GetLastError;
 
 pub const CloseHandle = std_windows.CloseHandle;
 
 pub fn unexpectedWSAError(err: ws2_32.WinsockError) UnexpectedError {
-    return std_windows.unexpectedError(@as(Win32Error, @enumFromInt(@intFromEnum(err))));
+    @branchHint(.cold);
+    // Do NOT route this through std_windows.unexpectedError: it takes a
+    // Win32Error and prints it with `{t}` (@tagName). Winsock codes live in the
+    // 10000+ range and have no Win32Error tag, so @tagName panics with "invalid
+    // enum value". ws2_32.WinsockError is its own exhaustive enum that does have
+    // tags for these codes, so format it directly.
+    if (std.options.unexpected_error_tracing) {
+        std.debug.print("error.Unexpected: WSAGetLastError({d}): {t}\n", .{ @intFromEnum(err), err });
+        std.debug.dumpCurrentStackTrace(.{ .first_address = @returnAddress() });
+    }
+    return error.Unexpected;
 }
 
 pub fn WSASocketW(
@@ -294,6 +303,21 @@ const OVERLAPPED = extern struct {
     hEvent: ?HANDLE,
 };
 
+pub const HANDLE_FLAG_INHERIT = 1;
+pub const HANDLE_FLAG_PROTECT_FROM_CLOSE = 2;
+
+/// Disables handle inheritance for the given handle (Windows equivalent of
+/// FD_CLOEXEC). Works on socket handles as well as regular file handles.
+pub fn setNoInherit(handle: HANDLE) !void {
+    if (kernel32.SetHandleInformation(handle, HANDLE_FLAG_INHERIT, 0) == .FALSE) {
+        switch (GetLastError()) {
+            .INVALID_HANDLE => return error.Unexpected,
+            .ACCESS_DENIED => return error.AccessDenied,
+            else => |err| return std_windows.unexpectedError(err),
+        }
+    }
+}
+
 /// kernel32 was severely trimmed in Zig 0.16, so re-declare the few entry
 /// points we need.
 const kernel32 = struct {
@@ -311,5 +335,11 @@ const kernel32 = struct {
         nNumberOfBytesToWrite: DWORD,
         lpNumberOfBytesWritten: ?*DWORD,
         lpOverlapped: ?*OVERLAPPED,
+    ) callconv(.winapi) BOOL;
+
+    pub extern "kernel32" fn SetHandleInformation(
+        hObject: HANDLE,
+        dwMask: DWORD,
+        dwFlags: DWORD,
     ) callconv(.winapi) BOOL;
 };

@@ -32,9 +32,7 @@ pub const FallbackAllocator = struct {
     fn resize(ctx: *anyopaque, buf: []u8, alignment: std.mem.Alignment, new_len: usize, ra: usize) bool {
         const self: *FallbackAllocator = @ptrCast(@alignCast(ctx));
         if (self.fba.ownsPtr(buf.ptr)) {
-            if (self.fixed.rawResize(buf, alignment, new_len, ra)) {
-                return true;
-            }
+            return self.fixed.rawResize(buf, alignment, new_len, ra);
         }
         return self.fallback.rawResize(buf, alignment, new_len, ra);
     }

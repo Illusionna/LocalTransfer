@@ -227,6 +227,11 @@ pub fn streaming_multipart(
         std.Io.Dir.cwd().deleteFile(io, tmp) catch {};
         gpa.free(tmp);
     };
+    var active_tmp: ?[]u8 = null;
+    defer if (active_tmp) |tmp| {
+        std.Io.Dir.cwd().deleteFile(io, tmp) catch {};
+        gpa.free(tmp);
+    };
 
     const cwd = std.Io.Dir.cwd();
     const session_ns = std.Io.Clock.real.now(io).toNanoseconds();
@@ -265,8 +270,7 @@ pub fn streaming_multipart(
             tmp_seq = tmp_seq + 1;
             const tmp_path = try utils.join_path(gpa, cfg.store_dir, &.{tmp_name});
             gpa.free(tmp_name);
-            errdefer cwd.deleteFile(io, tmp_path) catch {};
-            errdefer gpa.free(tmp_path);
+            active_tmp = tmp_path;
 
             if (std.fs.path.dirname(tmp_path)) |dd| cwd.createDirPath(io, dd) catch {};
             const file = cwd.createFile(io, tmp_path, .{ .exclusive = true }) catch {
@@ -277,6 +281,7 @@ pub fn streaming_multipart(
                     pending_rel = null;
                 }
                 gpa.free(tmp_path);
+                active_tmp = null;
                 continue :parts_loop;
             };
 
@@ -295,10 +300,12 @@ pub fn streaming_multipart(
                 pending_rel = null;
                 if (renamed) {
                     gpa.free(tmp_path);
+                    active_tmp = null;
                 }
                 else {
                     cwd.deleteFile(io, tmp_path) catch {};
                     gpa.free(tmp_path);
+                    active_tmp = null;
                 }
             }
             else {
@@ -307,6 +314,7 @@ pub fn streaming_multipart(
                     gpa.free(old_tmp);
                 }
                 pending_tmp = tmp_path;
+                active_tmp = null;
             }
         }
         else if (std.mem.eql(u8, part_name, "RelativePath")) {
@@ -925,36 +933,51 @@ fn append_search_page_result(
     matched: *usize
 ) !bool {
     const name_matches = std.ascii.indexOfIgnoreCase(name, target) != null;
-    const description = if (search_content) try utils.find_matching_text_snippet(
+    var matches = if (search_content) try utils.find_matching_text_snippets(
         io,
         scratch_allocator,
         allocator,
         dir,
         leaf,
         target,
-        class.search_max_file_read_bytes
-    ) else null;
-    errdefer if (description) |line| allocator.free(line);
-    if (!name_matches and description == null) return false;
+        class.search_max_file_read_bytes,
+        if (offset > matched.*) offset - matched.* else 0,
+        limit - out.items.len
+    ) else class.MatchingTextSnippets{
+        .items = try allocator.alloc([]u8, 0),
+        .match_count = 0,
+        .has_more = false
+    };
+    var transferred: usize = 0;
+    defer {
+        for (matches.items[transferred .. ]) |snippet| allocator.free(snippet);
+        allocator.free(matches.items);
+    }
+
+    matched.* = matched.* + matches.match_count;
+    for (matches.items) |description| {
+        const path = try allocator.dupe(u8, display_path);
+        out.append(
+            allocator,
+            .{ .Path = path, .Description = description }
+        ) catch |err| {
+            allocator.free(path);
+            return err;
+        };
+        transferred = transferred + 1;
+    }
+    if (matches.has_more) return true;
+    if (matches.match_count > 0 or !name_matches) return false;
 
     matched.* = matched.* + 1;
-    if (matched.* <= offset) {
-        if (description) |line| allocator.free(line);
-        return false;
-    }
-    if (out.items.len >= limit) {
-        if (description) |line| allocator.free(line);
-        return true;
-    }
+    if (matched.* <= offset) return false;
+    if (out.items.len >= limit) return true;
 
     const path = try allocator.dupe(u8, display_path);
     errdefer allocator.free(path);
     try out.append(
         allocator,
-        .{
-            .Path = path,
-            .Description = description orelse ""
-        }
+        .{ .Path = path, .Description = "" }
     );
     return false;
 }

@@ -18,15 +18,9 @@ pub const Buffer = struct {
     };
 };
 
-// When we're in blocking mode, the Pool is shared by threads in the blocking
-// worker's threadpool. Thus, we need to synchornize access.
-// When we're not in blocking mode, every worker gets its own Pool and the pool
-// is only accessed from that worker thread, so no lockig is required.
 pub const Pool = struct {
-    const M = if (blockingMode()) Mutex else void;
-
     io: Io,
-    mutex: M,
+    mutex: Mutex,
     available: usize,
     buffers: []Buffer,
     allocator: Allocator,
@@ -53,7 +47,7 @@ pub const Pool = struct {
 
         return .{
             .io = io,
-            .mutex = if (comptime blockingMode()) .init else {},
+            .mutex = .init,
             .buffers = buffers,
             .available = count,
             .allocator = allocator,
@@ -88,8 +82,8 @@ pub const Pool = struct {
     // to allocating. Useful when the caller wants to use the pool as a hot path
     // and handle the empty case with a different strategy.
     pub fn tryAlloc(self: *Pool) ?Buffer {
-        self.lock();
-        defer self.unlock();
+        self.mutex.lockUncancelable(self.io);
+        defer self.mutex.unlock(self.io);
 
         const available = self.available;
         if (available == 0) {
@@ -110,17 +104,17 @@ pub const Pool = struct {
             };
         }
 
-        self.lock();
+        self.mutex.lockUncancelable(self.io);
         const available = self.available;
         if (available == 0) {
-            self.unlock();
+            self.mutex.unlock(self.io);
             metrics.allocBufferEmpty(size);
             return .{
                 .type = buffer_type,
                 .data = try allocator.alloc(u8, size),
             };
         }
-        defer self.unlock();
+        defer self.mutex.unlock(self.io);
 
         const index = available - 1;
         const buffer = self.buffers[index];
@@ -142,28 +136,40 @@ pub const Pool = struct {
             .static, .arena => {},
             .dynamic => self.allocator.free(buffer.data),
             .pooled => {
-                self.lock();
-                defer self.unlock();
+                self.mutex.lockUncancelable(self.io);
+                defer self.mutex.unlock(self.io);
                 const available = self.available;
                 self.buffers[available] = buffer;
                 self.available = available + 1;
             },
         }
     }
-
-    inline fn lock(self: *Pool) void {
-        if (comptime blockingMode()) {
-            self.mutex.lockUncancelable(self.io);
-        }
-    }
-    inline fn unlock(self: *Pool) void {
-        if (comptime blockingMode()) {
-            self.mutex.unlock(self.io);
-        }
-    }
 };
 
 const t = @import("t.zig");
+
+test "BufferPool race" {
+    if (comptime blockingMode()) return error.SkipZigTest;
+
+    var pool = try Pool.init(t.io, t.allocator, 1, 64);
+    defer pool.deinit();
+
+    const Ctx = struct {
+        fn worker(p: *Pool) void {
+            var i: usize = 0;
+            while (i < 500_000) : (i += 1) {
+                const buf = p.tryAlloc() orelse continue;
+                std.atomic.spinLoopHint();
+                p.release(buf);
+            }
+        }
+    };
+
+    var threads: [4]std.Thread = undefined;
+    for (&threads) |*thr| thr.* = try std.Thread.spawn(.{}, Ctx.worker, .{&pool});
+    for (&threads) |*thr| thr.join();
+}
+
 test "BufferPool" {
     var pool = try Pool.init(t.io, t.allocator, 2, 10);
     defer pool.deinit();

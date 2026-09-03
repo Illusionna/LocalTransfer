@@ -352,7 +352,7 @@ pub fn Blocking(comptime H: type) type {
                 var address: posix.Address = undefined;
                 var address_len: posix.socklen_t = @sizeOf(posix.Address);
                 const socket = posix.accept(listener, &address.any, &address_len, posix.CLOEXEC) catch |err| {
-                    if (err == error.ConnectionAborted or err == error.SocketNotListening) {
+                    if (err == error.ConnectionAborted or err == error.SocketNotListening or err == error.FileDescriptorNotASocket) {
                         log.info("received shutdown signal", .{});
                         return;
                     }

@@ -108,6 +108,7 @@ pub const RecvError = error{
     ConnectionResetByPeer,
     SocketNotConnected,
     NetworkSubsystemFailed,
+    FileDescriptorNotASocket,
     Unexpected,
 };
 
@@ -130,7 +131,7 @@ pub fn recv(s: ws2_32.SOCKET, buf: []u8) RecvError!usize {
         .WSAESHUTDOWN => return 0,
         .WSAEINTR, .WSAEINPROGRESS => unreachable,
         .WSAEINVAL, .WSAEFAULT => unreachable,
-        .WSAENOTSOCK => unreachable,
+        .WSAENOTSOCK => return error.FileDescriptorNotASocket,
         .WSAEOPNOTSUPP => unreachable,
         else => |err| return unexpectedWSAError(err),
     }
@@ -145,6 +146,7 @@ pub const SendError = error{
     AccessDenied,
     SystemResources,
     MessageTooBig,
+    FileDescriptorNotASocket,
     Unexpected,
 };
 
@@ -164,7 +166,7 @@ pub fn send(s: ws2_32.SOCKET, bytes: []const u8) SendError!usize {
         .WSAEMSGSIZE => return error.MessageTooBig,
         .WSAEINTR, .WSAEINPROGRESS => unreachable,
         .WSAEINVAL, .WSAEFAULT => unreachable,
-        .WSAENOTSOCK => unreachable,
+        .WSAENOTSOCK => return error.FileDescriptorNotASocket,
         .WSAEOPNOTSUPP => unreachable,
         else => |err| return unexpectedWSAError(err),
     }

@@ -184,21 +184,61 @@ pub fn setsockopt(fd: socket_t, level: i32, optname: u32, opt: []const u8) !void
         var opt_ptr: [*]const u8 = opt.ptr;
         var opt_len: i32 = @intCast(opt.len);
         if (level == SOL.SOCKET and (optname == SO.RCVTIMEO or optname == SO.SNDTIMEO) and opt.len == @sizeOf(timeval)) {
-            const tv: *const timeval = @ptrCast(@alignCast(opt.ptr));
+            var tv: timeval align(@alignOf(timeval)) = undefined;
+            @memcpy(@as(*[@sizeOf(timeval)]u8, @ptrCast(&tv))[0..], opt.ptr[0..@sizeOf(timeval)]);
             const total_ms = @as(i64, tv.sec) * 1000 + @divTrunc(@as(i64, tv.usec), 1000);
             ms_buf = if (total_ms < 0) 0 else @intCast(@min(total_ms, std.math.maxInt(u32)));
             opt_ptr = @ptrCast(&ms_buf);
             opt_len = @sizeOf(u32);
         }
-        const rc = windows.ws2_32.setsockopt(fd, level, @intCast(optname), opt_ptr, opt_len);
-        if (rc == windows.ws2_32.SOCKET_ERROR) {
-            switch (windows.ws2_32.WSAGetLastError()) {
-                .WSANOTINITIALISED => unreachable,
-                .WSAENETDOWN => return error.NetworkSubsystemFailed,
-                .WSAEFAULT => unreachable,
-                .WSAENOTSOCK => return error.FileDescriptorNotASocket,
-                .WSAEINVAL => return error.SocketNotBound,
-                else => |err| return windows.unexpectedWSAError(err),
+        // AFD handles (from Io.net.*) use NtDeviceIoControlFile; Winsock sockets
+        // (from posix.socket()) use ws2_32. Try AFD first, fall back to Winsock.
+        {
+            const w = windows.std_windows;
+            var iosb: w.IO_STATUS_BLOCK = undefined;
+            const info = w.AFD.SOCKOPT_INFO{
+                .mode = .set,
+                .level = level,
+                .optname = optname,
+                .optval = opt_ptr,
+                .optlen = @as(usize, @intCast(opt_len)),
+            };
+            const status = w.ntdll.NtDeviceIoControlFile(
+                fd,
+                null,
+                null,
+                null,
+                &iosb,
+                w.IOCTL.AFD.SOCKOPT,
+                @ptrCast(&info),
+                @sizeOf(@TypeOf(info)),
+                null,
+                0,
+            );
+            if (status == .SUCCESS) return;
+            if (status == .NOT_SUPPORTED or status == .OBJECT_TYPE_MISMATCH) {
+                // Not an AFD handle, or option unsupported — try Winsock.
+            } else {
+                switch (status) {
+                    .INSUFFICIENT_RESOURCES => return error.SystemResources,
+                    .INVALID_PARAMETER => return error.SocketNotBound,
+                    else => return w.unexpectedStatus(status),
+                }
+            }
+        }
+        {
+            const rc = windows.ws2_32.setsockopt(fd, level, @intCast(optname), opt_ptr, opt_len);
+            if (rc == windows.ws2_32.SOCKET_ERROR) {
+                switch (windows.ws2_32.WSAGetLastError()) {
+                    .WSANOTINITIALISED => unreachable,
+                    .WSAENETDOWN => return error.NetworkSubsystemFailed,
+                    .WSAEFAULT => unreachable,
+                    // AFD handle that genuinely does not support this option
+                    // (e.g. RCVTIMEO — Io manages timeouts internally).
+                    .WSAENOTSOCK => return,
+                    .WSAEINVAL => return error.SocketNotBound,
+                    else => |err| return windows.unexpectedWSAError(err),
+                }
             }
         }
         return;

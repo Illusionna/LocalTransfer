@@ -364,13 +364,13 @@ pub fn Server(comptime H: type) type {
                 break :blk try posix.socket(address.any.family, sock_flags, proto);
             };
 
-            if (is_unix_socket) {
-                // TODO: Broken on darwin:
-                // https://github.com/ziglang/zig/issues/17260
-                // if (@hasDecl(os.TCP, "NODELAY")) {
-                //  try os.setsockopt(socket.sockfd.?, os.IPPROTO.TCP, os.TCP.NODELAY, &std.mem.toBytes(@as(c_int, 1)));
-                // }
-                try posix.setsockopt(listener, posix.IPPROTO.TCP, 1, &std.mem.toBytes(@as(c_int, 1)));
+            errdefer {
+                posix.close(listener);
+                self._listener = null;
+            }
+
+            if (is_unix_socket == false) {
+                try posix.setsockopt(listener, posix.IPPROTO.TCP, posix.TCP.NODELAY, &std.mem.toBytes(@as(c_int, 1)));
             }
 
             try posix.setsockopt(listener, posix.SOL.SOCKET, posix.SO.REUSEADDR, &std.mem.toBytes(@as(c_int, 1)));
@@ -738,22 +738,22 @@ const FallbackAllocator = struct {
     fn resize(ctx: *anyopaque, buf: []u8, alignment: std.mem.Alignment, new_len: usize, ra: usize) bool {
         const self: *FallbackAllocator = @ptrCast(@alignCast(ctx));
         if (self.fba.ownsPtr(buf.ptr)) {
-            if (self.fixed.rawResize(buf, alignment, new_len, ra)) {
-                return true;
-            }
-            self.fixed.rawFree(buf, alignment, ra);
-            return false;
+            // A failed resize must leave the allocation valid. Callers like
+            // ArenaAllocator keep using the buffer after a false return, so
+            // we cannot reclaim it here (that caused memory to be handed out
+            // twice and corrupted live arena nodes).
+            return self.fixed.rawResize(buf, alignment, new_len, ra);
         }
         return self.fallback.rawResize(buf, alignment, new_len, ra);
     }
 
     fn free(ctx: *anyopaque, buf: []u8, alignment: std.mem.Alignment, ra: usize) void {
-        _ = ctx;
-        _ = buf;
-        _ = alignment;
-        _ = ra;
-        // hack.
-        // Always noop since, in our specific usage, we know fallback is an arena.
+        const self: *FallbackAllocator = @ptrCast(@alignCast(ctx));
+        if (self.fba.ownsPtr(buf.ptr)) {
+            // reclaims thread_buf space when buf is the fba's last allocation
+            self.fixed.rawFree(buf, alignment, ra);
+        }
+        // else: fallback is an arena in our specific usage, freeing is a noop
     }
 
     fn remap(ctx: *anyopaque, memory: []u8, alignment: std.mem.Alignment, new_len: usize, ret_addr: usize) ?[*]u8 {
@@ -1034,6 +1034,60 @@ test "httpz: shutdown without listen" {
     server.stop();
     server.deinit();
 }
+
+// https://github.com/karlseguin/http.zig/issues/223
+// A handler that's still in-flight when the server is stopped completes during
+// deinit (thread_pool.stop() joins it), which puts its conn in handover_list
+// with the event loop already gone - so processSignal never applies the
+// handover. Shutting that list down has to respect the handover, or we close a
+// socket the application already owns (and here, already closed): .BADF, which
+// posix.close treats as unreachable.
+test "httpz: disowned connection still in handover at shutdown" {
+    const H = ShutdownDisownHandler;
+    H.in_handler.store(false, .release);
+    H.may_finish.store(false, .release);
+
+    var server = try Server(H).init(t.io, t.allocator, .{ .address = .localhost(6994) }, H{});
+    const thrd = try server.listenInNewThread();
+
+    {
+        const stream = testStream(6994);
+        defer stream.close(t.io);
+        var writer = stream.writer(t.io, &.{});
+        try writer.interface.writeAll("GET / HTTP/1.1\r\nContent-Length: 0\r\n\r\n");
+
+        while (H.in_handler.load(.acquire) == false) {
+            try t.io.sleep(.fromMilliseconds(5), .awake);
+        }
+
+        // The handler is parked inside the request. Stop the server out from
+        // under it, then let it finish and disown.
+        server.stop();
+        H.may_finish.store(true, .release);
+    }
+
+    thrd.join();
+    server.deinit();
+}
+
+const ShutdownDisownHandler = struct {
+    var in_handler: std.atomic.Value(bool) = .init(false);
+    var may_finish: std.atomic.Value(bool) = .init(false);
+
+    pub fn handle(_: ShutdownDisownHandler, _: *Request, res: *Response) void {
+        in_handler.store(true, .release);
+        while (may_finish.load(.acquire) == false) {
+            t.io.sleep(.fromMilliseconds(5), .awake) catch unreachable;
+        }
+
+        const socket = res.conn.stream.socket.handle;
+        res.disown() catch unreachable;
+
+        // We're the owner now, so we're the one that closes it. httpz must not
+        // close it again during shutdown.
+        posix.close(socket);
+    }
+};
 
 test "httpz: invalid request" {
     const stream = testStream(5992);
@@ -2152,6 +2206,73 @@ test "websocket: stress" {
         }.run, .{i}) catch return;
     }
     for (&threads) |*th| th.join();
+}
+
+test "FallbackAllocator: failed resize leaves allocation valid" {
+    var thread_buf: [1024]u8 = undefined;
+    var req_arena = std.heap.ArenaAllocator.init(t.allocator);
+    defer req_arena.deinit();
+
+    var fba = FixedBufferAllocator.init(&thread_buf);
+    var fb = FallbackAllocator{
+        .fba = &fba,
+        .fallback = req_arena.allocator(),
+        .fixed = fba.allocator(),
+    };
+    const allocator = fb.allocator();
+
+    const a = try allocator.alloc(u8, 100);
+    @memset(a, 1);
+
+    // can't grow past thread_buf, must fail AND leave `a` valid
+    try t.expectEqual(false, allocator.resize(a, 2000));
+
+    // `a` is still live, a new allocation must not alias it
+    const b = try allocator.alloc(u8, 100);
+    @memset(b, 2);
+    try t.expectEqual(true, a.ptr != b.ptr);
+    try t.expectEqual(1, a[0]);
+
+    // an explicit free should reclaim the fba space
+    allocator.free(b);
+    allocator.free(a);
+    const c = try allocator.alloc(u8, 800);
+    try t.expectEqual(true, fba.ownsPtr(c.ptr));
+}
+
+test "FallbackAllocator: nested arena survives node resize failure" {
+    // Simulates a handler that creates its own arena on top of req.arena
+    // while the response writer grows in the same allocator. The arena
+    // grows its node via resize; when that fails, the node must remain
+    // valid or its header gets overwritten by subsequent allocations.
+    var thread_buf: [2048]u8 = undefined;
+    var req_arena = std.heap.ArenaAllocator.init(t.allocator);
+    defer req_arena.deinit();
+
+    var fba = FixedBufferAllocator.init(&thread_buf);
+    var fb = FallbackAllocator{
+        .fba = &fba,
+        .fallback = req_arena.allocator(),
+        .fixed = fba.allocator(),
+    };
+    const allocator = fb.allocator();
+
+    var nested = std.heap.ArenaAllocator.init(allocator);
+    defer nested.deinit();
+
+    // first allocation puts an arena node in thread_buf, the second forces
+    // a node resize that fails (larger than thread_buf)
+    _ = try nested.allocator().alloc(u8, 64);
+    _ = try nested.allocator().alloc(u8, 4096);
+
+    // response writer keeps allocating from the same request allocator. If
+    // the failed resize freed the node, this overwrites the node header and
+    // nested.deinit() crashes.
+    var out = std.Io.Writer.Allocating.init(allocator);
+    defer out.deinit();
+    for (0..100) |_| {
+        try out.writer.writeAll("{\"key\": \"some json value written by the response writer\"}");
+    }
 }
 
 test "ContentType: forX" {

@@ -21,10 +21,27 @@ pub fn monitor(io: std.Io, allocator: std.mem.Allocator, hub: *class.WatchHub, s
         return;
     };
     const context = class.MonitorContext{ .io = io, .allocator = allocator, .hub = hub, .root = root, .previous_hash = &previous };
+    var reported_failure = false;
+    while (!hub.is_stopping(io)) {
+        monitor_native(context) catch |err| {
+            if (hub.is_stopping(io)) return;
+            if (!reported_failure) {
+                std.log.warn("file supervisor interrupted; retrying: {s}", .{ @errorName(err) });
+                reported_failure = true;
+            }
+            std.Io.sleep(io, .fromMilliseconds(class.shutdown_poll_ms), .awake) catch {};
+            continue;
+        };
+        return;
+    }
+}
+
+
+fn monitor_native(context: class.MonitorContext) !void {
     switch (builtin.os.tag) {
-        .linux => monitor_linux(context) catch |err| std.log.err("inotify supervisor failed: {s}", .{ @errorName(err) }),
-        .macos => monitor_macos(context) catch |err| std.log.err("FSEvents supervisor failed: {s}", .{ @errorName(err) }),
-        .windows => monitor_windows(context) catch |err| std.log.err("Windows supervisor failed: {s}", .{ @errorName(err) }),
+        .linux => try monitor_linux(context),
+        .macos => try monitor_macos(context),
+        .windows => try monitor_windows(context),
         else => @compileError("supervisor supports Linux, macOS, and Windows")
     }
 }
