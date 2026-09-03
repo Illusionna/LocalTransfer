@@ -4,6 +4,11 @@ const std = @import("std");
 pub fn build(b: *std.Build) void {
     b.graph.incremental = false;
 
+    const diagnostic = b.option(bool, "diagnostic", "Build with debug symbols and frame pointers") orelse false;
+    const sanitize_thread = b.option(bool, "sanitize-thread", "Enable ThreadSanitizer (Linux native only)") orelse false;
+    const name = b.option([]const u8, "name", "Executable name") orelse "ziger";
+    const optimize: std.builtin.OptimizeMode = if (diagnostic or sanitize_thread) .Debug else .ReleaseSmall;
+
     const target = b.standardTargetOptions(
         .{
             .default_target = .{ .cpu_model = .native },
@@ -15,15 +20,15 @@ pub fn build(b: *std.Build) void {
         .{
             .root_source_file = b.path("src/main.zig"),
             .target = target,
-            .optimize = .ReleaseSmall,
-            .strip = true,
-            .unwind_tables = .none,
-            .error_tracing = false,
+            .optimize = optimize,
+            .strip = !diagnostic and !sanitize_thread,
+            .unwind_tables = if (diagnostic or sanitize_thread) .sync else .none,
+            .error_tracing = diagnostic or sanitize_thread,
             .stack_protector = false,
-            .stack_check = false,
-            .omit_frame_pointer = true,
-            .sanitize_c = .off,
-            .sanitize_thread = false,
+            .stack_check = diagnostic or sanitize_thread,
+            .omit_frame_pointer = !diagnostic and !sanitize_thread,
+            .sanitize_c = if (diagnostic) .full else .off,
+            .sanitize_thread = sanitize_thread,
             .fuzz = false,
             .single_threaded = false,
             .link_libc = true
@@ -36,7 +41,8 @@ pub fn build(b: *std.Build) void {
             "httpz",
             .{
                 .target = target,
-                .optimize = .ReleaseFast
+                .optimize = optimize,
+                .tsan = sanitize_thread
             }
         ).module("httpz")
     );
@@ -48,7 +54,7 @@ pub fn build(b: *std.Build) void {
 
     const exe = b.addExecutable(
         .{
-            .name = "ziger",
+            .name = name,
             .root_module = mod
         }
     );
