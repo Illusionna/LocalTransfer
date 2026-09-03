@@ -135,7 +135,13 @@ pub fn share_handler(handler: *class.Handler, request: *httpz.Request, response:
         response.content_type = .HTML;
         const w = response.writer();
         try w.writeAll("<pre>\n");
-        for (list) |item| try w.print("<a href=\"{s}\">{s}</a>\n", .{ item.FileName, item.FileName });
+        for (list) |item| {
+            try w.writeAll("<a href=\"");
+            try write_share_href_handler(w, path, item.FileName);
+            try w.writeAll("\">");
+            try write_html_escaped_handler(w, item.FileName);
+            try w.writeAll("</a>\n");
+        }
         try w.writeAll("</pre>");
         return;
     }
@@ -148,8 +154,9 @@ pub fn share_handler(handler: *class.Handler, request: *httpz.Request, response:
     const presentation = core.content_presentation(path, first_chunk[0 .. first_chunk_len], first_chunk_len < first_chunk.len);
 
     const disposition = if (presentation.should_inline) "inline" else "attachment";
+    const safe_filename = try safe_header_filename_handler(response.arena, std.fs.path.basename(path));
     response.header("Content-Type", presentation.content_type);
-    response.header("Content-Disposition", try std.fmt.allocPrint(response.arena, "{s}; filename=\"{s}\"", .{ disposition, std.fs.path.basename(path) }));
+    response.header("Content-Disposition", try std.fmt.allocPrint(response.arena, "{s}; filename=\"{s}\"", .{ disposition, safe_filename }));
 
     if (first_chunk_len > 0) try response.chunk(first_chunk[0 .. first_chunk_len]);
     var dst: [256 * 1024]u8 = undefined;
@@ -228,8 +235,18 @@ pub fn upload_handler(handler: *class.Handler, request: *httpz.Request, response
     app.state.file_mutex.lockUncancelable(app.io);
     defer app.state.file_mutex.unlock(app.io);
     const results = core.streaming_multipart(app.io, app.gpa, app.cfg, content_type, cr) catch |err| {
-        response.status = if (err == error.UnsafePath) 400 else if (err == error.FileTooLarge) 413 else 500;
-        response.body = if (err == error.UnsafePath) "[HTTP 400] invalid or unsafe upload path" else if (err == error.FileTooLarge) "[HTTP 413] uploaded file is too large" else "[HTTP 500] fail to parse form";
+        const malformed = switch (err) {
+            error.NoBoundary,
+            error.UnexpectedEof,
+            error.EndOfStream,
+            error.HeadersTooLarge,
+            error.InvalidNeedle,
+            error.StreamParserBufferTooSmall,
+            => true,
+            else => false
+        };
+        response.status = if (err == error.UnsafePath or malformed) 400 else if (err == error.FileTooLarge) 413 else 500;
+        response.body = if (err == error.UnsafePath) "[HTTP 400] invalid or unsafe upload path" else if (malformed) "[HTTP 400] malformed multipart body" else if (err == error.FileTooLarge) "[HTTP 413] uploaded file is too large" else "[HTTP 500] fail to parse form";
         return;
     };
     defer {
@@ -397,6 +414,54 @@ fn operation_results_handler(response: *httpz.Response, results: []const class.F
 fn bad_request_handler(response: *httpz.Response, msg: []const u8) void {
     response.status = 400;
     response.body = msg;
+}
+
+
+fn safe_header_filename_handler(allocator: std.mem.Allocator, name: []const u8) ![]u8 {
+    const safe = try allocator.dupe(u8, name);
+    for (safe) |*byte| if (byte.* < 0x20 or byte.* == 0x7f or byte.* == '"' or byte.* == '\\') {
+        byte.* = '_';
+    };
+    return safe;
+}
+
+
+fn write_html_escaped_handler(writer: *std.Io.Writer, value: []const u8) !void {
+    for (value) |byte| switch (byte) {
+        '&' => try writer.writeAll("&amp;"),
+        '<' => try writer.writeAll("&lt;"),
+        '>' => try writer.writeAll("&gt;"),
+        '"' => try writer.writeAll("&quot;"),
+        '\'' => try writer.writeAll("&#39;"),
+        else => try writer.writeByte(byte)
+    };
+}
+
+
+fn write_share_href_handler(writer: *std.Io.Writer, current_path: []const u8, name: []const u8) !void {
+    if (std.mem.eql(u8, name, ". .")) {
+        const parent = std.fs.path.dirname(current_path) orelse return writer.writeAll("/");
+        try writer.writeAll("/api/share/");
+        return write_url_component_handler(writer, parent);
+    }
+    try writer.writeAll("/api/share/");
+    if (!std.mem.eql(u8, current_path, ".")) {
+        try write_url_component_handler(writer, current_path);
+        try writer.writeByte('/');
+    }
+    try write_url_component_handler(writer, name);
+}
+
+
+fn write_url_component_handler(writer: *std.Io.Writer, value: []const u8) !void {
+    const hex = "0123456789ABCDEF";
+    for (value) |byte| if (std.ascii.isAlphanumeric(byte) or byte == '-' or byte == '.' or byte == '_' or byte == '~') {
+        try writer.writeByte(byte);
+    } else {
+        try writer.writeByte('%');
+        try writer.writeByte(hex[byte >> 4]);
+        try writer.writeByte(hex[byte & 0x0f]);
+    };
 }
 
 

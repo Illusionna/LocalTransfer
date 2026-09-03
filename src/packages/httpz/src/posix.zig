@@ -11,6 +11,34 @@ pub const AF = posix.AF;
 pub const SO = posix.SO;
 pub const SOL = posix.SOL;
 pub const SOCK = posix.SOCK;
+pub const TCP = switch (builtin.os.tag) {
+    // Zig doesn't expose these /shrug
+    .freebsd, .dragonfly => struct {
+        pub const NODELAY = 1;
+        pub const KEEPIDLE = 256;
+        pub const KEEPINTVL = 512;
+        pub const KEEPCNT = 1024;
+    },
+    .netbsd => struct {
+        pub const NODELAY = 1;
+        pub const KEEPIDLE = 3;
+        pub const KEEPINTVL = 5;
+        pub const KEEPCNT = 6;
+    },
+    .openbsd => struct {
+        pub const NODELAY = 1;
+    },
+    .illumos => struct {
+        pub const NODELAY = 1;
+        pub const KEEPIDLE = 0x22;
+        pub const KEEPCNT = 0x23;
+        pub const KEEPINTVL = 0x24;
+    },
+    .haiku => struct {
+        pub const NODELAY = 1;
+    },
+    else => if (posix.TCP == void) struct {} else posix.TCP,
+};
 pub const fd_t = posix.fd_t;
 pub const socket_t = posix.socket_t;
 pub const timeval = posix.timeval;
@@ -87,7 +115,11 @@ pub fn socket(domain: u32, socket_type: u32, protocol: u32) !socket_t {
 fn setSockFlags(sock: socket_t, flags: u32) !void {
     if ((flags & CLOEXEC) != 0) {
         if (native_os == .windows) {
-            // TODO: Find out if this is supported for sockets
+            // Windows: disable handle inheritance. This prevents child
+            // processes from inheriting the socket, equivalent to FD_CLOEXEC.
+            // Socket handles are HANDLE objects in Windows NT, so
+            // SetHandleInformation works on them.
+            try windows.setNoInherit(@ptrCast(sock));
         } else {
             var fd_flags = fcntl(sock, F.GETFD, 0) catch |err| switch (err) {
                 error.FileBusy => unreachable,
@@ -116,7 +148,11 @@ fn setSockFlags(sock: socket_t, flags: u32) !void {
                     .WSANOTINITIALISED => unreachable,
                     .WSAENETDOWN => return error.NetworkSubsystemFailed,
                     .WSAENOTSOCK => return error.FileDescriptorNotASocket,
-                    // TODO: handle more errors
+                    .WSAEINVAL => return error.Unexpected,
+                    .WSAEFAULT,
+                    .WSAEOPNOTSUPP,
+                    .WSAEINPROGRESS,
+                    => unreachable,
                     else => |err| return windows.unexpectedWSAError(err),
                 }
             }
@@ -490,7 +526,7 @@ pub fn accept(
                     .WSANOTINITIALISED => unreachable, // not initialized WSA
                     .WSAECONNRESET => return error.ConnectionResetByPeer,
                     .WSAEFAULT => unreachable,
-                    .WSAENOTSOCK => return error.FileDescriptorNotASocket,
+                    .WSAEINTR, .WSAENOTSOCK => return error.SocketNotListening,
                     .WSAEINVAL => return error.SocketNotListening,
                     .WSAEMFILE => return error.ProcessFdQuotaExceeded,
                     .WSAENETDOWN => return error.NetworkSubsystemFailed,

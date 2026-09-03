@@ -30,7 +30,9 @@ pub fn print_launch(writer: *std.Io.Writer, cfg: *const class.AppConfig, argv0: 
     utils.write_file_size(&fbs, cfg.max_bytes()) catch {};
     try print_logo(writer);
     try writer.print("* \x1b[1;32mINFO\x1b[0m: Started server process ID [\x1b[1;36m{d}\x1b[0m]\n", .{ process_id() });
-    try writer.print("* \x1b[1;32mINFO\x1b[0m: Shared file directory: \x1b[1;36m\"{s}\"\x1b[0m | Saved file directory: \x1b[1;36m\"{s}\"\x1b[0m\n", .{ cfg.share_dir, cfg.store_dir });
+    try writer.print("* \x1b[1;32mINFO\x1b[0m: Shared file directory: \x1b[1;36m\"{s}\"\x1b[0m\n", .{ cfg.share_dir });
+    try writer.print("* \x1b[1;32mINFO\x1b[0m: Saved file directory: \x1b[1;36m\"{s}\"\x1b[0m\n", .{ cfg.store_dir });
+    try writer.print("* \x1b[1;32mINFO\x1b[0m: Login password: \x1b[38;2;255;165;0m\"{s}\"\x1b[0m\n", .{ cfg.login_pwd });
     try writer.print("* \x1b[1;32mINFO\x1b[0m: Limit maximum file size: \x1b[1;36m{s}\x1b[0m\n", .{ fbs.buffered() });
     try writer.print("* \x1b[1;32mINFO\x1b[0m: See help document >>> \x1b[1;36m{s} --help\x1b[0m\n", .{ argv0 });
     try writer.print("* \x1b[1;32mINFO\x1b[0m: Zig HTTP service is running on \x1b[1;36mhttp://{s}:{s}\x1b[0m (Press \x1b[1;33mCTRL+C\x1b[0m to quit)\n", .{ cfg.host_ipv4, cfg.host_port });

@@ -33,6 +33,13 @@ pub const WindowsWatch = struct {
 };
 
 
+pub const MatchingTextSnippets = struct {
+    items: [][]u8,
+    match_count: usize,
+    has_more: bool
+};
+
+
 pub const MonitorContext = struct {
     io: std.Io,
     allocator: std.mem.Allocator,

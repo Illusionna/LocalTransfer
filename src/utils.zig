@@ -513,27 +513,84 @@ pub fn relative_search_path(current_dir: []const u8, path: []const u8) ?[]const 
 }
 
 
-pub fn find_matching_text_snippet(io: std.Io, read_allocator: std.mem.Allocator, result_allocator: std.mem.Allocator, dir: std.Io.Dir, name: []const u8, target: []const u8, max_read_bytes: usize) !?[]u8 {
-    if (!is_text_candidate(name)) return null;
-    if (!file_starts_as_plain_text(io, dir, name)) return null;
-    const file = dir.openFile(io, name, .{ .follow_symlinks = false, .resolve_beneath = true }) catch return null;
+pub fn find_matching_text_snippets(
+    io: std.Io,
+    read_allocator: std.mem.Allocator,
+    result_allocator: std.mem.Allocator,
+    dir: std.Io.Dir,
+    name: []const u8,
+    target: []const u8,
+    max_read_bytes: usize,
+    skip: usize,
+    limit: usize
+) !class.MatchingTextSnippets {
+    var snippets: std.ArrayList([]u8) = .empty;
+    errdefer {
+        for (snippets.items) |snippet| result_allocator.free(snippet);
+        snippets.deinit(result_allocator);
+    }
+    if (!is_text_candidate(name) or !file_starts_as_plain_text(io, dir, name)) return .{
+        .items = try snippets.toOwnedSlice(result_allocator),
+        .match_count = 0,
+        .has_more = false
+    };
+    const file = dir.openFile(io, name, .{ .follow_symlinks = false, .resolve_beneath = true }) catch return .{
+        .items = try snippets.toOwnedSlice(result_allocator),
+        .match_count = 0,
+        .has_more = false
+    };
     defer file.close(io);
     var buffer: [8 * 1024]u8 = undefined;
     var reader = file.reader(io, &buffer);
-    const content = reader.interface.allocRemaining(read_allocator, .limited(max_read_bytes)) catch return null;
+    const content = reader.interface.allocRemaining(read_allocator, .limited(max_read_bytes)) catch return .{
+        .items = try snippets.toOwnedSlice(result_allocator),
+        .match_count = 0,
+        .has_more = false
+    };
     defer read_allocator.free(content);
-    if (!is_probably_plain_text(content, true)) return null;
+    if (!is_probably_plain_text(content, true)) return .{
+        .items = try snippets.toOwnedSlice(result_allocator),
+        .match_count = 0,
+        .has_more = false
+    };
+    return collect_matching_text_snippets(result_allocator, &snippets, content, target, skip, limit);
+}
 
-    const match_index = std.ascii.indexOfIgnoreCase(content, target) orelse return null;
-    const line_start = if (std.mem.lastIndexOfScalar(u8, content[0 .. match_index], '\n')) |i| i + 1 else 0;
-    const line_end = std.mem.indexOfScalarPos(u8, content, match_index + target.len, '\n') orelse content.len;
 
-    var snippet_start = if (match_index > line_start + 120) match_index - 120 else line_start;
-    while (snippet_start < match_index and content[snippet_start] & 0xc0 == 0x80) snippet_start = snippet_start + 1;
-    var snippet_end = @min(line_end, match_index + target.len + 200);
-    while (snippet_end > match_index + target.len and snippet_end < content.len and content[snippet_end] & 0xc0 == 0x80) snippet_end = snippet_end - 1;
-    const snippet = std.mem.trim(u8, content[snippet_start .. snippet_end], " \t\r");
-    return try result_allocator.dupe(u8, snippet);
+fn collect_matching_text_snippets(
+    allocator: std.mem.Allocator,
+    snippets: *std.ArrayList([]u8),
+    content: []const u8,
+    target: []const u8,
+    skip: usize,
+    limit: usize
+) !class.MatchingTextSnippets {
+    var match_count: usize = 0;
+    var line_start: usize = 0;
+    while (line_start <= content.len) {
+        const line_end = std.mem.indexOfScalarPos(u8, content, line_start, '\n') orelse content.len;
+        const line = content[line_start .. line_end];
+        if (std.ascii.indexOfIgnoreCase(line, target)) |match_in_line| {
+            match_count = match_count + 1;
+            if (match_count > skip) {
+                if (snippets.items.len >= limit) return .{
+                    .items = try snippets.toOwnedSlice(allocator),
+                    .match_count = match_count,
+                    .has_more = true
+                };
+                var snippet_start = if (match_in_line > 120) match_in_line - 120 else 0;
+                while (snippet_start < match_in_line and line[snippet_start] & 0xc0 == 0x80) snippet_start = snippet_start + 1;
+                var snippet_end = @min(line.len, match_in_line + target.len + 200);
+                while (snippet_end > match_in_line + target.len and snippet_end < line.len and line[snippet_end] & 0xc0 == 0x80) snippet_end = snippet_end - 1;
+                const snippet = try allocator.dupe(u8, std.mem.trim(u8, line[snippet_start .. snippet_end], " \t\r"));
+                errdefer allocator.free(snippet);
+                try snippets.append(allocator, snippet);
+            }
+        }
+        if (line_end == content.len) break;
+        line_start = line_end + 1;
+    }
+    return .{ .items = try snippets.toOwnedSlice(allocator), .match_count = match_count, .has_more = false };
 }
 
 

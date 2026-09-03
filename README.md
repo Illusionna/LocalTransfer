@@ -29,7 +29,11 @@ Zig Local Transfer 是一个 HTTP 文件服务器，具备图形化界面，支�
 
 ## 编译
 
-> 运行环境：Ziglang 0.16.0、操作系统 64 位
+> 运行环境：`Ziglang 0.16.0`、操作系统 `64` 位
+
+```sh
+zig version
+```
 
 下载仓库代码：
 
@@ -41,6 +45,35 @@ git clone --depth 1 https://github.com/Illusionna/LocalTransfer.git
 
 ```sh
 make
+```
+
+## Docker 部署
+
+> 拉取镜像
+
+```sh
+docker pull illusionna/localtransfer-amd64:latest
+```
+
+> 使用镜像
+
+```sh
+docker run \
+    --rm -it \
+    -p 8888:8888 \
+    -v "$PWD:/share" \
+    -v "$PWD:/store" \
+    illusionna/localtransfer-amd64:latest \
+        --share /share \
+        --store /store \
+        --login '123456'
+```
+
+> 构建镜像
+
+```sh
+make docker-amd64
+make docker-arm64
 ```
 
 ## 开源致谢

@@ -21,72 +21,69 @@ document.querySelector('.nav-item img[src="/UI/assets/images/search.svg"]').pare
     
             <p id="searching"></p>
     
-            <div id="search-dialog-results"></div>
+            <ol id="search-dialog-results" class="search-dialog-result-list"></ol>
         `;
     }
 
-    const search = async (offset, append) => {
+    const search = async () => {
         if (!search_state || search_state.loading) return;
         search_state.loading = true;
         const searching = document.getElementById('searching');
-        const load_more = document.getElementById('search-dialog-load-more');
-        if (load_more) load_more.disabled = true;
-        searching.textContent = append ? '正在加载更多结果...' : '正在搜索中...';
+        searching.textContent = '正在搜索中...';
 
         try {
             const start_time = Date.now();
-            const response = await fetch('/api/search-file/', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    Path: search_state.paths,
-                    Target: search_state.target,
-                    CurrentDir: search_state.current_dir,
-                    Limit: 50,
-                    Offset: offset,
-                })
-            });
-            if (!response.ok) {
-                throw new Error(`[* HTTP ${response.status}], 建议刷新重试.`);
+            const all_results = [];
+            let next_offset = 0;
+            let truncated = false;
+            while (next_offset !== null && next_offset !== undefined) {
+                const offset = next_offset;
+                const response = await fetch('/api/search-file/', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        Path: search_state.paths,
+                        Target: search_state.target,
+                        CurrentDir: search_state.current_dir,
+                        Limit: 512,
+                        Offset: offset,
+                    })
+                });
+                if (!response.ok) {
+                    throw new Error(`[* HTTP ${response.status}], 建议刷新重试.`);
+                }
+                const json = await response.json();
+                const results = Array.isArray(json) ? json : (json.Results || []);
+                search_state.result_count += results.length;
+                results.forEach(item => {
+                    all_results.push(item);
+                    search_state.result_paths.add(item.Path);
+                });
+                truncated = truncated || json.Truncated;
+                next_offset = Array.isArray(json) ? null : json.NextOffset;
+                if (next_offset !== null && next_offset !== undefined) {
+                    if (next_offset <= offset) throw new Error('搜索分页位置异常，建议刷新重试.');
+                    searching.textContent = `正在搜索中... 已找到 ${search_state.result_count} 处结果`;
+                }
             }
-            const json = await response.json();
-            const results = Array.isArray(json) ? json : (json.Results || []);
+            UpdateSearchDialog(all_results, false, search_state.current_dir);
             const duration = Date.now() - start_time;
             const duration_text = duration >= 1000 ? `${(duration / 1000).toFixed(2)} 秒` : `${duration} 毫秒`;
-            search_state.result_count += results.length;
-            search_state.next_offset = json.NextOffset;
 
             if (search_state.result_count === 0) {
                 searching.textContent = '没有找到相关结果，请尝试其他搜索？';
             } else {
-                searching.textContent = json.Truncated ? '搜索达到扫描上限，请缩小范围或关键字后重试。' : '';
+                searching.textContent = truncated ? '搜索达到扫描上限，请缩小范围或关键字后重试。' : '';
             }
-            document.querySelector('.search-dialog-result-information-count').innerHTML = `耗时 ${duration_text}, 已加载 <span>${search_state.result_count}</span> 个结果.`;
-            UpdateSearchDialog(results, append, search_state.current_dir);
-            update_load_more_button();
+            document.querySelector('.search-dialog-result-information-count').innerHTML = `耗时 ${duration_text}, 已加载 <span>${search_state.result_paths.size}</span> 个文件，${search_state.result_count} 处结果.`;
         } catch (error) {
             alert("搜索文件异常: " + error.message);
             searching.textContent = '';
         } finally {
             search_state.loading = false;
-            const button = document.getElementById('search-dialog-load-more');
-            if (button) button.disabled = false;
         }
-    };
-
-    const update_load_more_button = () => {
-        document.getElementById('search-dialog-load-more')?.remove();
-        if (search_state.next_offset === null || search_state.next_offset === undefined) return;
-
-        const button = document.createElement('button');
-        button.id = 'search-dialog-load-more';
-        button.type = 'button';
-        button.className = 'search-dialog-confirm-button';
-        button.textContent = '加载更多结果';
-        button.addEventListener('click', () => search(search_state.next_offset, true));
-        document.getElementById('search-dialog-results').after(button);
     };
 
     document.getElementById('search-dialog-confirm-button-t').addEventListener('click', () => {
@@ -112,14 +109,13 @@ document.querySelector('.nav-item img[src="/UI/assets/images/search.svg"]').pare
             // Keep result links rooted in the directory that was searched.
             current_dir: CURRENT_DIR,
             result_count: 0,
-            next_offset: null,
+            result_paths: new Set(),
             loading: false,
         };
         document.querySelector('.search-dialog-result-information-count').innerHTML = `找到 <span>0</span> 个结果`;
         const results_div = document.getElementById('search-dialog-results');
         results_div.innerHTML = '';
-        document.getElementById('search-dialog-load-more')?.remove();
-        search(0, false);
+        search();
     });
 });
 
@@ -130,40 +126,51 @@ function UpdateSearchDialog(data, append = false, current_dir = '.') {
     if (!append) results_div.innerHTML = '';
 
     data.forEach(item => {
-        const div = document.createElement('div');
-        div.className = 'search-dialog-separator-line';
+        let div = Array.from(results_div.children).find(child => child.dataset.path === item.Path);
+        if (!div) {
+            div = document.createElement('li');
+            div.className = 'search-dialog-separator-line';
+            div.dataset.path = item.Path;
 
-        const path_div = document.createElement('div');
-        path_div.className = 'search-dialog-result-item-path';
-        path_div.textContent = item.Path;
-        path_div.title = '点击打开';
-        path_div.style.cursor = 'pointer';
-        path_div.tabIndex = 0;
-        path_div.setAttribute('role', 'link');
-        const open_result = () => {
-            const link = document.createElement('a');
-            link.href = BuildShareUrl(current_dir, item.Path);
-            link.target = '_blank';
-            link.rel = 'noopener';
-            link.style.display = 'none';
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-        };
-        path_div.addEventListener('click', open_result);
-        path_div.addEventListener('keydown', event => {
-            if (event.key === 'Enter' || event.key === ' ') {
-                event.preventDefault();
-                open_result();
-            }
-        });
-        div.appendChild(path_div);
+            const path_div = document.createElement('div');
+            path_div.className = 'search-dialog-result-item-path';
+            path_div.textContent = item.Path;
+            path_div.title = '点击打开';
+            path_div.style.cursor = 'pointer';
+            path_div.tabIndex = 0;
+            path_div.setAttribute('role', 'link');
+            const open_result = () => {
+                const link = document.createElement('a');
+                link.href = BuildShareUrl(current_dir, item.Path);
+                link.target = '_blank';
+                link.rel = 'noopener';
+                link.style.display = 'none';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            };
+            path_div.addEventListener('click', open_result);
+            path_div.addEventListener('keydown', event => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    open_result();
+                }
+            });
+            div.appendChild(path_div);
+            results_div.appendChild(div);
+        }
 
         if (item.Description) {
-            const description_div = document.createElement('div');
+            let description_list = div.querySelector('.search-dialog-result-item-descriptions');
+            if (!description_list) {
+                description_list = document.createElement('ol');
+                description_list.className = 'search-dialog-result-item-descriptions';
+                div.appendChild(description_list);
+            }
+            const description_div = document.createElement('li');
             description_div.className = 'search-dialog-result-item-description';
             description_div.textContent = item.Description;
-            div.append(description_div);
+            description_list.appendChild(description_div);
         }
 
         if ('Image' in item) {
@@ -174,6 +181,5 @@ function UpdateSearchDialog(data, append = false, current_dir = '.') {
             `;
             div.appendChild(image_div);
         }
-        results_div.appendChild(div);
     });
 }
